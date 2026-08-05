@@ -30,6 +30,8 @@
 | 🎯 **交互式选项卡片** | 单选 / 多选 / Other 自由输入，经 JSON-RPC 直接应答 |
 | 📱 **手机适配** | 响应式布局，触屏放大预览，输入框多行 + 图片粘贴 |
 | 🎚️ **自动滚动开关** | 右下角悬浮按钮；上滚/触摸**立即脱离**跟随，滚回底部恢复 |
+| 🧩 **有序片段展示** | thinking/工具调用/答复按**到达顺序**流式显示（终端式时间线），非固定三块 |
+| 🤏 **thinking 折叠预览** | 思考块默认收起，只显示最新几行预览；点开看完整内容 |
 
 ---
 
@@ -152,17 +154,33 @@ MediaImage ──<img>──→ /api/media（图片二进制）
 | 事件 | payload 关键字段 | 处理 |
 |------|-----------------|------|
 | `session.info` | `title` | 会话标题 |
-| `message.start` | — | 开启新 assistant 流式消息 |
-| `message.delta` | `text`（增量） | 追加到当前消息正文 |
-| `message.complete` | `text`（**全量**）`reasoning` | 替换正文（勿拼接！官方 finalTail 语义） |
-| `thinking.delta` / `reasoning.delta` | `text`（增量） | 追加 thinking 折叠区 |
-| `tool.start` | `tool_id, name, args_text, todos` | 开工具卡片 |
-| `tool.progress` | `name, preview` | 更新卡片预览 |
-| `tool.complete` | `tool_id, name, error, summary, duration_s, result_text` | 卡片收尾 |
+| `message.start` | — | 开启新 assistant 流式消息（`segments: []`） |
+| `message.delta` | `text`（增量） | 追加到**最后一个 text 片段**（无则新建片段） |
+| `message.complete` | `text`（**全量**）`reasoning` | 替换最后一个 text 片段（勿拼接！官方 finalTail 语义） |
+| `thinking.delta` / `reasoning.delta` | `text`（增量） | 追加到**最后一个 thinking 片段**（无则新建片段） |
+| `tool.start` | `tool_id, name, args_text, todos` | push 新 tool 片段（开工具卡片） |
+| `tool.progress` | `name, preview` | 更新对应 tool 片段预览 |
+| `tool.complete` | `tool_id, name, error, summary, duration_s, result_text` | 更新对应 tool 片段收尾 |
 | `clarify.request` | `request_id, question, choices, multi_select?` | 渲染选项卡片 |
 
 ⚠️ **`message.complete.text` 是全量最终文本**。官方 TUI 用 `finalTail` 剥掉已流式前缀，
-web reducer 必须**替换**累积的 delta 而不是拼接（否则重复渲染）。
+web reducer 必须**替换**最后一个 text 片段而不是拼接（否则重复渲染）。
+
+### 消息数据模型（ChatMessage）
+
+```typescript
+interface ChatMessage {
+  segments: ChatSegment[];   // 有序片段：thinking/tool/text 按事件到达顺序
+  text?: string;             // 派生：最后一个 text 片段内容（兼容旧引用）
+  thinking?: string;         // 派生：所有 thinking 片段 join
+  tools?: ToolCallInfo[];    // 派生：所有 tool 片段
+  status: "streaming" | "complete";
+}
+```
+
+reducer 收到 `thinking.delta` / `message.delta` 时**追加到最后一个同类型片段**（类型切换才新建），
+`tool.start` 总是新建片段——因此渲染顺序 = 真实到达顺序（可交错）。已完成片段保持**对象引用稳定**，
+配合 React.memo 避免流式期间重渲染历史片段。
 
 ### 本地 action（非事件）
 
@@ -178,7 +196,7 @@ web reducer 必须**替换**累积的 delta 而不是拼接（否则重复渲染
 web/src/lib/chat-event-stream.ts      # 核心：reducer 状态机 + useChatEventStream hook
 web/src/lib/media.ts                  # 媒体路径 → /api/media URL 工具
 web/src/components/ChatMessageList.tsx # 消息列表（自动滚动开关 + wheel/触摸立即脱离）
-web/src/components/MessageBubble.tsx   # 消息气泡（thinking 折叠 + 正文 Markdown）
+web/src/components/MessageBubble.tsx   # 消息气泡（segments 顺序渲染 + thinking 折叠预览）
 web/src/components/ToolCallBlock.tsx   # 工具调用卡片（纯 CSS 状态徽标）
 web/src/components/ClarifyCard.tsx     # 选项卡片（单选/多选/Other）
 web/src/components/MediaImage.tsx      # 图片卡片 + 点击放大 lightbox
@@ -203,6 +221,10 @@ hermes_cli/web_server.py               # 后端（仅 /api/media 放宽为任意
 - **流式期间显示纯文本**（无 markdown 格式），`message.complete` 后才格式化——这是稳定性
   的代价，属有意设计（见「流式渲染性能决策记录」）。流式时最后一行（无换行）可能延迟
   到行完结才完整显示。
+- **表格解析**要求表头行下一行是 GFM 分隔行（`|---|`）；段落/列表后无空行直接接表格
+  已支持（2026-08-05 修复）
+- **移动端键盘**：Android Chrome 走 `interactive-widget=resizes-content`；iOS 靠
+  visualViewport 兜底滚动到底
 
 ---
 
@@ -229,7 +251,9 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.1**（当前，稳定）：气泡对话 + 工具卡片 + 选项卡片 + 表格 + 图片 + 历史加载
+- **v1.2**（当前，稳定）：v1.1 + 有序片段（segments 时间线）+ thinking 折叠预览
+  + 表格解析修复 + 移动端键盘适配
+- **v1.1**：气泡对话 + 工具卡片 + 选项卡片 + 表格 + 图片 + 历史加载
   + 自动滚动开关；流式渲染性能修复（纯文本流式 + 完成后格式化）
 - **v1.0**：气泡对话 + 工具卡片 + 选项卡片 + 表格 + 图片 + 历史加载（流式期间全量 markdown，
   长输出卡死，已修复）
