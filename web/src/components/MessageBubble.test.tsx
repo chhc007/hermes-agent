@@ -101,6 +101,20 @@ describe("MessageBubble", () => {
       "careful thought",
     );
   });
+
+  it("pins the collapsed thinking preview to a fixed height so it never jumps", async () => {
+    await render(
+      <MessageBubble message={{ ...base, thinking: "some thought\n" }} />,
+    );
+
+    // The collapsed preview paragraph uses a fixed height + overflow-hidden so
+    // wrap changes (scrollbar appearing/disappearing) can't stretch it.
+    const preview = Array.from(container.querySelectorAll("p")).find(
+      (p) => p.textContent?.includes("some thought"),
+    );
+    expect(preview?.className).toContain("h-[2.25rem]");
+    expect(preview?.className).toContain("overflow-hidden");
+  });
 });
 
 describe("MessageBubble segments ordering", () => {

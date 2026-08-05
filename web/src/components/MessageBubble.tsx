@@ -263,9 +263,16 @@ function ThinkingBlock({ text }: { text: string }) {
           <Markdown content={trimmed} />
         </div>
       ) : (
-        <p className="mt-1 border-l-2 border-border/40 pl-2.5 text-[11px] italic text-text-tertiary">
+        // Fixed preview height: h-[2.25rem] ≈ 2 lines pins the box so short /
+        // streaming previews don't collapse and re-expand, and overflow-hidden
+        // caps content beyond 2 lines so wrap changes from container width
+        // (scrollbar appearing/disappearing) never push the height — the
+        // preview container height is constant, so the thinking frame never
+        // jumps. The inner span is w-full so line-clamp-2 actually engages
+        // inside the flex container.
+        <p className="mt-1 flex h-[2.25rem] items-start overflow-hidden border-l-2 border-border/40 pl-2.5 text-[11px] italic text-text-tertiary">
           {previewLines.length > 0 ? (
-            <span className="line-clamp-2 block">
+            <span className="line-clamp-2 block w-full">
               {previewLines.map((line, i) => (
                 <span key={i} className="block">
                   {line.length > 120 ? `${line.slice(0, 120)}…` : line}
@@ -273,7 +280,7 @@ function ThinkingBlock({ text }: { text: string }) {
               ))}
             </span>
           ) : (
-            "thinking…"
+            <span className="truncate">thinking…</span>
           )}
         </p>
       )}
