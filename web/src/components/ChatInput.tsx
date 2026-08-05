@@ -22,7 +22,8 @@ import {
 import { cn } from "@/lib/utils";
 
 interface ChatInputProps {
-  onSend: (text: string) => void;
+  /** Returns false when the message was NOT accepted (e.g. PTY not connected). */
+  onSend: (text: string) => boolean | void;
   disabled?: boolean;
   /** Receive image drops/pastes so the owner (ChatPage) can upload + attach. */
   onImages?: (files: File[]) => void;
@@ -37,8 +38,11 @@ export function ChatInput({ onSend, disabled, onImages, className }: ChatInputPr
   const submit = useCallback(() => {
     const text = value.trim();
     if (!text || disabled) return;
-    onSend(text);
-    setValue("");
+    // Only clear the composer when the send was actually accepted — if the
+    // PTY socket isn't open, onSend returns false and we keep the text so
+    // the user can retry instead of losing their message.
+    const accepted = onSend(text);
+    if (accepted !== false) setValue("");
   }, [value, disabled, onSend]);
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {

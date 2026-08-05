@@ -481,18 +481,23 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   };
 
   // Chat-view composer: the user's typed prompt is written straight into the
-  // SAME PTY WebSocket the xterm terminal would send keystrokes over. Sending
-  // the text as a burst then a Return mimics a paste-and-submit so Ink's
-  // tokenizer emits the composer content in one go (same rhythm as
-  // handleCopyLast). Returns false when the socket isn't open, so the UI can
-  // surface a "not connected" state.
+  // SAME PTY WebSocket the xterm terminal would send keystrokes over. Text is
+  // sent as a burst, then Return is sent ~100ms later as its own event —
+  // Node's stdin coalescing would otherwise merge "text\r" into a single
+  // paste event and Ink's tokenizer would never see the Enter (same rhythm
+  // as handleCopyLast, whose timing comment documents the 100ms window).
+  // Returns false when the socket isn't open, so the UI can surface a
+  // "not connected" state.
   const sendChatPrompt = useCallback((text: string) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return false;
     }
     ws.send(text);
-    ws.send("\r");
+    window.setTimeout(() => {
+      const s = wsRef.current;
+      if (s && s.readyState === WebSocket.OPEN) s.send("\r");
+    }, 100);
     return true;
   }, []);
 

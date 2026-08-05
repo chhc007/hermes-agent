@@ -57,6 +57,20 @@ describe("ChatInput", () => {
     expect((container.querySelector("textarea") as HTMLTextAreaElement).value).toBe("");
   });
 
+  it("keeps the text when onSend rejects (PTY not connected)", async () => {
+    const onSend = vi.fn(() => false);
+    await render(<ChatInput onSend={onSend} />);
+    await setValue("hi hermes");
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+    });
+    expect(onSend).toHaveBeenCalledWith("hi hermes");
+    expect(textarea.value).toBe("hi hermes");
+  });
+
   it("does not send blank or whitespace-only input", async () => {
     const onSend = vi.fn();
     await render(<ChatInput onSend={onSend} />);
