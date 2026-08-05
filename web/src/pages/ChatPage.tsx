@@ -423,6 +423,59 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       completionGw.close();
     };
   }, [completionGw]);
+  // Mobile fallback: when the software keyboard pops (iOS Safari and other
+  // browsers without `interactive-widget=resizes-content`), the visual
+  // viewport shrinks but the `h-dvh` layout viewport does not, so the latest
+  // bubbles stay hidden behind the keyboard + composer. On a significant
+  // visual-height drop while the composer textarea has focus, snap the message
+  // list to the bottom a frame later (after the browser finishes focusing +
+  // scrolling the input) so the newest message is visible. Desktop is excluded
+  // by the "focused input + big shrink" pairing — a window resize alone never
+  // triggers it.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    let lastHeight = vv.height;
+    let rafHandle = 0;
+    let settledTimer = 0;
+    let inShrink = false;
+    const scrollToBottom = () => {
+      document
+        .querySelector<HTMLElement>('[data-testid="message-list"]')
+        ?.scrollTo({ top: 999999 });
+    };
+    const onResize = () => {
+      const shrink = vv.height < lastHeight - 100;
+      // Only react to a keyboard-style shrink whenever the composer textarea
+      // is the focused element (i.e. the soft keyboard is up).
+      const composerFocused = document.activeElement instanceof HTMLTextAreaElement;
+      inShrink = shrink && composerFocused;
+      lastHeight = vv.height;
+      if (!inShrink) return;
+      // Let the browser finish focusing + scrolling the input, then scroll the
+      // message list to the bottom so the latest bubble is visible.
+      if (rafHandle) cancelAnimationFrame(rafHandle);
+      rafHandle = requestAnimationFrame(() => {
+        rafHandle = 0;
+        scrollToBottom();
+        settledTimer = window.setTimeout(scrollToBottom, 100);
+      });
+    };
+    vv.addEventListener("resize", onResize);
+    const restoreOnGrow = () => {
+      if (inShrink && vv.height >= lastHeight) {
+        // Keyboard dismissed / viewport restored — nothing left to nudge.
+        inShrink = false;
+      }
+    };
+    vv.addEventListener("resize", restoreOnGrow);
+    return () => {
+      vv.removeEventListener("resize", onResize);
+      vv.removeEventListener("resize", restoreOnGrow);
+      if (rafHandle) cancelAnimationFrame(rafHandle);
+      if (settledTimer) clearTimeout(settledTimer);
+    };
+  }, []);
   const handleCompletionKey = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) =>
       slashPopoverRef.current?.handleKey(e) ?? false,

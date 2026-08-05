@@ -93,6 +93,7 @@ export function ChatMessageList({ messages, className }: ChatMessageListProps) {
         onScroll={handleScroll}
         onWheel={handleWheel}
         onTouchStart={handleTouchStart}
+        data-testid="message-list"
         data-streaming={isStreaming ? "true" : undefined}
         className={cn(
           "flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden px-1 pb-10 pt-3",
