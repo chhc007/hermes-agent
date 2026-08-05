@@ -11,25 +11,8 @@
 import { Loader2, X, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
+import { mediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
-
-const MEDIA_ENDPOINT = "/api/media";
-
-/** Resolve a media reference (absolute path, ~-path, or relative) to the
- *  /api/media URL the backend can serve. Relative paths are tried as-is;
- *  the backend resolves ~ and absolute paths. */
-export function mediaUrl(path: string): string {
-  const p = path.trim();
-  if (!p) return "";
-  // Already a URL or data URL — pass through.
-  if (/^(https?:|data:|blob:)/i.test(p)) return p;
-  return `${MEDIA_ENDPOINT}?path=${encodeURIComponent(p)}`;
-}
-
-/** True when a line (or markdown alt) is a media reference we can render. */
-export function isMediaPath(path: string): boolean {
-  return /\.(png|jpe?g|gif|webp|bmp|svg|ico)(\?.*)?$/i.test(path.trim());
-}
 
 interface MediaImageProps {
   src: string; // raw path or URL
@@ -42,11 +25,6 @@ export function MediaImage({ src, alt, className }: MediaImageProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [zoom, setZoom] = useState(false);
-
-  useEffect(() => {
-    setLoading(true);
-    setError(false);
-  }, [url]);
 
   // Lock body scroll while the lightbox is open (mobile-friendly).
   useEffect(() => {
@@ -83,6 +61,7 @@ export function MediaImage({ src, alt, className }: MediaImageProps) {
             </div>
           )}
           <img
+            key={url}
             src={url}
             alt={alt ?? "media"}
             loading="lazy"

@@ -3,7 +3,9 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it } from "vitest";
 
-import { isMediaPath, mediaUrl, MediaImage } from "./MediaImage";
+import { isMediaPath, mediaUrl } from "@/lib/media";
+
+import { MediaImage } from "./MediaImage";
 
 let container: HTMLDivElement;
 let root: Root;
