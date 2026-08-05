@@ -104,6 +104,7 @@ export type ChatEventStreamAction =
   | { type: "event"; eventType: string; payload: unknown }
   | { type: "connection"; connectionState: ConnectionState; error?: string | null }
   | { type: "user_message"; text: string }
+  | { type: "system_message"; text: string }
   | { type: "history"; messages: ChatMessage[] }
   | { type: "clarify_answered" };
 
@@ -255,6 +256,22 @@ export function chatEventStreamReducer(
       messages: [
         ...state.messages,
         { id: nextId(), role: "user", text, status: "complete", ts: Date.now(), segments: [] },
+      ],
+    };
+  }
+
+  // Locally-optimistic system message: used for local-only hints (e.g. a
+  // terminal-only slash command was forwarded to the PTY). Not part of the
+  // /api/events feed — appended here so the chat view can surface it without
+  // an untracked side channel.
+  if (action.type === "system_message") {
+    const text = asString(action.text);
+    if (!text) return state;
+    return {
+      ...state,
+      messages: [
+        ...state.messages,
+        { id: nextId(), role: "system", text, status: "complete", ts: Date.now(), segments: [] },
       ],
     };
   }
@@ -482,6 +499,12 @@ export function chatEventStreamReducer(
     }
 
     default:
+      // All meaningful events are handled explicitly above. Anything else is
+      // internal noise (session.*, notification.*, moa.*, status.*,
+      // tool.output_risk, reasoning.available, tool.generating, …) and must
+      // NOT surface as chat messages — an earlier "surface everything"
+      // fallback let internal frames with text payloads flood the chat with
+      // [type] system messages the user found noisy.
       return state;
   }
 }
@@ -616,6 +639,12 @@ export function useChatEventStream(channel: string) {
     dispatch({ type: "user_message", text });
   }, []);
 
+  // Locally append a system hint bubble (e.g. "terminal-only command forwarded
+  // to the terminal view"). Stable identity, same rationale as sendUserMessage.
+  const addSystemMessage = useCallback((text: string) => {
+    dispatch({ type: "system_message", text });
+  }, []);
+
   // Replace the list with loaded session history (resumed chat mount).
   const loadHistory = useCallback((messages: ChatMessage[]) => {
     dispatch({ type: "history", messages });
@@ -732,5 +761,12 @@ export function useChatEventStream(channel: string) {
     };
   }, [channel]);
 
-  return { ...state, sendUserMessage, loadHistory, respondClarify, resetChat };
+  return {
+    ...state,
+    sendUserMessage,
+    addSystemMessage,
+    loadHistory,
+    respondClarify,
+    resetChat,
+  };
 }

@@ -1,3 +1,4 @@
+import { isTerminalOnlyCommand } from "@/lib/terminal-commands";
 import type { GatewayClient } from "@/lib/gatewayClient";
 import { ListItem } from "@nous-research/ui/ui/components/list-item";
 import { ChevronRight } from "lucide-react";
@@ -109,7 +110,8 @@ export const SlashPopover = forwardRef<SlashPopoverHandle, Props>(
               setSelected((s) => (s - 1 + items.length) % items.length);
               return true;
 
-            case "Tab": {
+            case "Tab":
+            case "Enter": {
               e.preventDefault();
               const item = items[selected];
               if (item) apply(item);
@@ -160,6 +162,12 @@ export const SlashPopover = forwardRef<SlashPopoverHandle, Props>(
               {it.meta && (
                 <span className="text-xs text-text-tertiary truncate ml-auto">
                   {it.meta}
+                </span>
+              )}
+
+              {isTerminalOnlyCommand(it.text) && (
+                <span className="rounded bg-secondary/60 px-1 text-[10px] text-text-tertiary ml-auto whitespace-nowrap">
+                  终端
                 </span>
               )}
             </ListItem>

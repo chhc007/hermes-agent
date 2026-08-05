@@ -45,10 +45,8 @@ import { ChatMessageList } from "@/components/ChatMessageList";
 import { ClarifyCard } from "@/components/ClarifyCard";
 import { SlashPopover, type SlashPopoverHandle } from "@/components/SlashPopover";
 import { GatewayClient } from "@/lib/gatewayClient";
-import {
-  sessionMessagesToChatMessages,
-  useChatEventStream,
-} from "@/lib/chat-event-stream";
+import { sessionMessagesToChatMessages, useChatEventStream } from "@/lib/chat-event-stream";
+import { isTerminalOnlyCommand } from "@/lib/terminal-commands";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
@@ -393,10 +391,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // Stable refs so effects/callbacks don't have to track the whole
   // (per-render) chatStream object — sendUserMessage/loadHistory are stable.
   const sendUserMessageRef = useRef(chatStream.sendUserMessage);
+  const addSystemMessageRef = useRef(chatStream.addSystemMessage);
   const loadHistoryRef = useRef(chatStream.loadHistory);
   const respondClarifyRef = useRef(chatStream.respondClarify);
+  // Stable refs for the async handlers below — sendUserMessage/loadHistory are stable.
   useEffect(() => {
     sendUserMessageRef.current = chatStream.sendUserMessage;
+    addSystemMessageRef.current = chatStream.addSystemMessage;
     loadHistoryRef.current = chatStream.loadHistory;
     respondClarifyRef.current = chatStream.respondClarify;
     resetChatRef.current = chatStream.resetChat;
@@ -660,6 +661,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // as handleCopyLast, whose timing comment documents the 100ms window).
   // Returns false when the socket isn't open, so the UI can surface a
   // "not connected" state.
+  //
+  // Every input (including `/`-prefixed slash commands) goes over the PTY —
+  // commands that need TUI state or interaction run only in the terminal
+  // view; the composer has no special handling for them. For terminal-only
+  // commands we still forward them (so the command executes), but surface a
+  // local hint bubble pointing the user at the Terminal view.
   const sendChatPrompt = useCallback(
     (text: string) => {
       const ws = wsRef.current;
@@ -671,6 +678,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         const s = wsRef.current;
         if (s && s.readyState === WebSocket.OPEN) s.send("\r");
       }, 100);
+      const trimmed = (text ?? "").trim();
+      if (trimmed.startsWith("/") && isTerminalOnlyCommand(trimmed)) {
+        addSystemMessageRef.current?.(
+          "此命令需在 Terminal 视图执行 — 已发送到终端，可切换到 Terminal 查看输出。",
+        );
+      }
       // Locally-optimistic user bubble: the /api/events feed carries no
       // user-input frames, so the composer appends its own message.
       sendUserMessageRef.current(text);

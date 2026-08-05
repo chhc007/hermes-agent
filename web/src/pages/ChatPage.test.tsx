@@ -66,6 +66,9 @@ class FakeTerminal {
 
 const maybeReloadForLoopbackWsAuthFailure = vi.fn(() => false);
 
+const mockAddSystemMessage = vi.fn();
+const mockSendUserMessage = vi.fn();
+
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: FakeFitAddon }));
 vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: class {} }));
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
@@ -85,7 +88,8 @@ vi.mock("@/lib/chat-event-stream", () => ({
     error: null,
     sessionTitle: null,
     clarify: null,
-    sendUserMessage: vi.fn(),
+    sendUserMessage: mockSendUserMessage,
+    addSystemMessage: mockAddSystemMessage,
     loadHistory: vi.fn(),
     respondClarify: vi.fn(async () => true),
   }),
@@ -158,6 +162,23 @@ type CloseEventLike = {
   wasClean: boolean;
 };
 
+/** Set a React-controlled input's value through the native setter so its
+ *  onChange handler fires (React tracks the value via a property descriptor). */
+function setInputValue(el: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  setter?.call(el, value);
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function submitComposerFrom(el: HTMLTextAreaElement) {
+  el.dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+  );
+}
+
 let container: HTMLDivElement;
 let root: Root;
 
@@ -171,6 +192,8 @@ async function render(ui: ReactNode) {
 beforeEach(() => {
   FakeWebSocket.instances = [];
   maybeReloadForLoopbackWsAuthFailure.mockClear();
+  mockAddSystemMessage.mockClear();
+  mockSendUserMessage.mockClear();
   vi.stubGlobal("WebSocket", FakeWebSocket);
   vi.stubGlobal(
     "ResizeObserver",
@@ -248,5 +271,58 @@ describe("ChatPage", () => {
     });
 
     expect(maybeReloadForLoopbackWsAuthFailure).toHaveBeenCalledWith(4401);
+  });
+
+  it("shows a local system hint when a terminal-only command is sent", async () => {
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+
+    // Flip the PTY socket to open so the composer's send path executes (the
+    // ChatInput submit is gated by ptyState !== "open" → disabled).
+    const ws = FakeWebSocket.instances[0];
+    await act(async () => ws.onopen?.());
+
+    // Type a terminal-only command into the composer and submit it.
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    setInputValue(textarea, "/memory pending");
+    await act(async () => {
+      submitComposerFrom(textarea);
+    });
+
+    // The command is still forwarded to the PTY…
+    expect(mockSendUserMessage).toHaveBeenCalledWith("/memory pending");
+    // …and a local system hint bubble is added.
+    expect(mockAddSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining("Terminal"),
+    );
+  });
+
+  it("does not add a system hint for ordinary chat prompts", async () => {
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    await act(async () => FakeWebSocket.instances[0].onopen?.());
+
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    setInputValue(textarea, "hello hermes");
+    await act(async () => {
+      submitComposerFrom(textarea);
+    });
+
+    expect(mockSendUserMessage).toHaveBeenCalledWith("hello hermes");
+    expect(mockAddSystemMessage).not.toHaveBeenCalled();
   });
 });

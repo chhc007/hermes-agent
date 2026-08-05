@@ -205,13 +205,45 @@ describe("reasoning", () => {
 });
 
 describe("ignored / unit events", () => {
-  it("reacts and unknown events do not change message list", () => {
+  it("reaction and notification events do not change message list", () => {
     const state = reduce([
       ["reaction", {}],
-      ["unknown.event", { some: 1 }],
       ["notification.show", { text: "hi" }],
+      ["notification.clear", {}],
     ]);
     expect(state.messages).toEqual([]);
+  });
+
+  it("known ignore-list events (moa, output_risk) are silent", () => {
+    const state = reduce([
+      ["moa.stage", { stage: 1 }],
+      ["tool.output_risk", { tool: "terminal" }],
+    ]);
+    expect(state.messages).toEqual([]);
+  });
+
+  it("internal namespace events (session, notification, status) are silent", () => {
+    const state = reduce([
+      ["session.changed", { session_id: "abc" }],
+      ["notification.some", { text: "hi" }],
+      ["status.heartbeat", { ok: true }],
+    ]);
+    expect(state.messages).toEqual([]);
+  });
+
+  it("unknown events without content are ignored, not surfaced", () => {
+    const state = reduce([["unknown.event", { some: 1 }]]);
+    expect(state.messages).toEqual([]);
+  });
+
+  it("unknown events are always ignored (no system fallback)", () => {
+    // All meaningful events are handled explicitly; unknown/internal frames
+    // (even ones carrying text content) must stay silent to avoid flooding
+    // the chat with [type] system messages.
+    const state = reduce([["unknown.event", { text: "hello world" }]]);
+    expect(state.messages).toHaveLength(0);
+    const state2 = reduce([["reasoning.available", { content: "noise" }]]);
+    expect(state2.messages).toHaveLength(0);
   });
 });
 
@@ -233,6 +265,27 @@ describe("user_message (local composer bubble)", () => {
     const state = chatEventStreamReducer(createInitialState(), {
       type: "user_message",
       text: "   ",
+    });
+    expect(state.messages).toEqual([]);
+  });
+});
+
+describe("system_message (local hint bubble)", () => {
+  it("appends a system bubble with the given hint", () => {
+    const state = chatEventStreamReducer(createInitialState(), {
+      type: "system_message",
+      text: "此命令需在 Terminal 视图执行",
+    });
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]!.role).toBe("system");
+    expect(state.messages[0]!.text).toBe("此命令需在 Terminal 视图执行");
+    expect(state.messages[0]!.status).toBe("complete");
+  });
+
+  it("rejects blank system hints", () => {
+    const state = chatEventStreamReducer(createInitialState(), {
+      type: "system_message",
+      text: "  ",
     });
     expect(state.messages).toEqual([]);
   });
@@ -466,7 +519,7 @@ describe("segments ordering", () => {
 describe("reset (fresh chat / channel change)", () => {
   it("clears messages, sessionTitle, and clarify from a populated state", () => {
     const populated = reduce([
-      ["session.info", { title: "Old session" }],
+      ["session.info", { title: "Old session", stored_session_id: "sess-old" }],
       ["message.start", {}],
       ["message.delta", { text: "old answer" }],
       ["message.complete", { text: "" }],
