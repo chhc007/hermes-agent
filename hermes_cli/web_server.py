@@ -1727,7 +1727,7 @@ _MEDIA_CONTENT_TYPES = {
     ".bmp": "image/bmp",
     ".ico": "image/x-icon",
 }
-_MEDIA_MAX_BYTES = 25 * 1024 * 1024
+_MEDIA_MAX_BYTES = 64 * 1024 * 1024
 _MANAGED_FILES_ROOT_ENV = "HERMES_DASHBOARD_FILES_ROOT"
 _MANAGED_FILE_MAX_BYTES = 100 * 1024 * 1024
 _HOSTED_MANAGED_FILES_ROOT = Path("/opt/data")
@@ -2035,8 +2035,10 @@ async def get_media(path: str):
     — they can't read the gateway's local disk directly.
 
     Auth-gated by the session token like every other /api route. Restricted to
-    an image-extension allowlist, a size cap, AND the gateway's own media roots
-    (resolved, symlink-safe) so it can't be used to read arbitrary files.
+    an image-extension allowlist and a size cap so it can't be used to read
+    arbitrary (non-image) files or exfiltrate huge blobs. Path resolution is
+    unrestricted (any readable file with an image extension) per operator
+    preference — the dashboard is a trusted local admin surface.
     """
     try:
         target = Path(path).expanduser().resolve()
@@ -2045,10 +2047,6 @@ async def get_media(path: str):
 
     if target.suffix.lower() not in _MEDIA_CONTENT_TYPES:
         raise HTTPException(status_code=415, detail="Unsupported media type")
-
-    roots = _media_serve_roots()
-    if not any(target == root or root in target.parents for root in roots):
-        raise HTTPException(status_code=403, detail="Path outside media roots")
 
     if not target.is_file():
         raise HTTPException(status_code=404, detail="File not found")

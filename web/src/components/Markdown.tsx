@@ -1,5 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 
+import { MediaImage } from "./MediaImage";
+
 /**
  * Lightweight markdown renderer for LLM output.
  * Handles: code blocks, inline code, bold, italic, headers, links, lists, horizontal rules.
@@ -55,7 +57,8 @@ type BlockNode =
   | { type: "hr" }
   | { type: "list"; ordered: boolean; items: string[] }
   | { type: "paragraph"; content: string }
-  | { type: "table"; headers: string[]; rows: string[][] };
+  | { type: "table"; headers: string[]; rows: string[][] }
+  | { type: "media"; src: string; alt?: string };
 
 /* ------------------------------------------------------------------ */
 /*  Block parser                                                       */
@@ -146,6 +149,20 @@ function parseBlocks(text: string): BlockNode[] {
         blocks.push({ type: "table", headers, rows });
       }
       continue;
+    }
+
+    // Media — standalone `MEDIA:/path/to/img.png` line, or a markdown image
+    // `![alt](path)` occupying its own line. Rendered as a clickable image.
+    {
+      const mediaMatch = line.match(/^\s*(?:[`"'])?MEDIA:\s*(\S+?)(?:[`"'])?\s*$/i);
+      const imgMatch = line.match(/^\s*!\[([^\]]*)\]\(([^)\s]+)\)\s*$/);
+      const mediaSrc = mediaMatch?.[1] ?? imgMatch?.[2];
+      const mediaAlt = imgMatch?.[1] || undefined;
+      if (mediaSrc && /\.(png|jpe?g|gif|webp|bmp|svg|ico)(\?.*)?$/i.test(mediaSrc)) {
+        blocks.push({ type: "media", src: mediaSrc, alt: mediaAlt });
+        i++;
+        continue;
+      }
     }
 
     // Empty line
@@ -282,6 +299,14 @@ function Block({
           </table>
           {caret}
         </div>
+      );
+
+    case "media":
+      return (
+        <>
+          <MediaImage src={block.src} alt={block.alt} />
+          {caret}
+        </>
       );
   }
 }
