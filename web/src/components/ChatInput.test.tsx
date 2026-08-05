@@ -167,4 +167,43 @@ describe("ChatInput", () => {
     expect((container.querySelector("textarea") as HTMLTextAreaElement).value).toBe("/copy");
     expect(onInputChange).toHaveBeenCalledWith("/copy");
   });
+
+  it("shows the grow button when content overflows the auto-grow cap", async () => {
+    await render(<ChatInput onSend={vi.fn()} />);
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    // jsdom reports scrollHeight 0 by default — simulate tall content.
+    Object.defineProperty(textarea, "scrollHeight", { configurable: true, value: 200 });
+    await setValue("a".repeat(200));
+    await act(async () => {});
+    const grow = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.getAttribute("aria-label") === "Expand input",
+    );
+    expect(grow).toBeTruthy();
+  });
+
+  it("expands and collapses the composer via the grow button", async () => {
+    await render(<ChatInput onSend={vi.fn()} />);
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    Object.defineProperty(textarea, "scrollHeight", { configurable: true, value: 200 });
+    await setValue("a".repeat(200));
+    await act(async () => {});
+    const grow = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.getAttribute("aria-label") === "Expand input",
+    ) as HTMLButtonElement;
+    await act(async () => {
+      grow.click();
+    });
+    const collapse = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.getAttribute("aria-label") === "Collapse input",
+    );
+    expect(collapse).toBeTruthy();
+    await act(async () => {
+      collapse!.click();
+    });
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (b) => b.getAttribute("aria-label") === "Expand input",
+      ),
+    ).toBe(true);
+  });
 });

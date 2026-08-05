@@ -10,10 +10,11 @@
  * Enter/Tab/arrows are consumed by the popover instead of submitting.
  */
 
-import { ImagePlus, Send } from "lucide-react";
+import { ImagePlus, Maximize2, Minimize2, Send } from "lucide-react";
 import {
   forwardRef,
   useCallback,
+  useEffect,
   useImperativeHandle,
   useRef,
   useState,
@@ -57,7 +58,25 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   ) {
     const [value, setValue] = useState("");
     const [dragging, setDragging] = useState(false);
+    // Expanded composer: user clicked the grow button for a taller editing
+    // area. Auto-grow caps at GROW_LINE_CAP rows; beyond that we stop growing
+    // and show a maximize button instead of letting the box swallow the page.
+    const [expanded, setExpanded] = useState(false);
+    const [needsGrow, setNeedsGrow] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+    // Auto-grow the textarea with content. Line height is ~1.25rem (text-sm
+    // leading-relaxed); GROW_LINE_CAP rows ≈ 6 lines before we switch to the
+    // maximize affordance.
+    useEffect(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.style.height = "auto";
+      const scrollH = el.scrollHeight;
+      const cap = expanded ? Math.round(window.innerHeight * 0.4) : 6 * 24;
+      el.style.height = `${Math.min(scrollH, cap)}px`;
+      setNeedsGrow(scrollH > 6 * 24);
+    }, [value, expanded]);
 
     // Expose focus/clear/setValue to the parent (completion apply, clearing).
     useImperativeHandle(ref, () => ({
@@ -154,11 +173,27 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           rows={1}
           placeholder="Message hermes… (Enter to send, Shift+Enter for a new line)"
           className={cn(
-            "max-h-40 min-h-8 flex-1 resize-none bg-transparent px-1 py-1.5",
+            "min-h-8 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1.5",
             "text-sm leading-relaxed text-foreground outline-none",
             "placeholder:text-text-tertiary disabled:cursor-not-allowed disabled:opacity-50",
           )}
         />
+
+        {needsGrow && (
+          <button
+            type="button"
+            onClick={() => setExpanded((e) => !e)}
+            aria-label={expanded ? "Collapse input" : "Expand input"}
+            title={expanded ? "Collapse input" : "Expand input"}
+            className="flex size-8 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-secondary/60 hover:text-text-secondary"
+          >
+            {expanded ? (
+              <Minimize2 className="size-4" />
+            ) : (
+              <Maximize2 className="size-4" />
+            )}
+          </button>
+        )}
 
         <button
           type="button"
