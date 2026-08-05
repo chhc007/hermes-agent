@@ -54,6 +54,91 @@ describe("Markdown table support", () => {
   });
 });
 
+describe("Markdown table edge cases", () => {
+  it("renders a table after a fenced code block", () => {
+    const md = [
+      "```sh",
+      "echo hi",
+      "```",
+      "| Name | Value |",
+      "| --- | --- |",
+      "| a | b |",
+    ].join("\n");
+    const html = renderMarkdown(md);
+    expect(html).toContain("<table");
+    expect(html).toContain("echo hi");
+    expect(html).toContain("a");
+    expect(html).toContain("b");
+  });
+
+  it("renders a table after a list", () => {
+    const md = [
+      "- item one",
+      "- item two",
+      "",
+      "| Key | Desc |",
+      "| --- | --- |",
+      "| k1 | d1 |",
+    ].join("\n");
+    const html = renderMarkdown(md);
+    expect(html).toContain("<table");
+    expect(html).toContain("item two");
+    expect(html).toContain("k1");
+  });
+
+  it("renders a table immediately after a list with no blank line", () => {
+    const md = [
+      "- item one",
+      "| Key | Desc |",
+      "| --- | --- |",
+      "| k1 | d1 |",
+    ].join("\n");
+    const html = renderMarkdown(md);
+    expect(html).toContain("<table");
+    expect(html).toContain("k1");
+  });
+
+  it("renders cells containing inline code and bold", () => {
+    const md = [
+      "| Col | Col2 |",
+      "| --- | --- |",
+      "| `code` | **bold** |",
+    ].join("\n");
+    const html = renderMarkdown(md);
+    expect(html).toContain("<table");
+    expect(html).toContain("<code");
+    expect(html).toContain("code</code>");
+    expect(html).toContain("<strong");
+    expect(html).toContain("bold</strong>");
+  });
+
+  it("renders a table that is the last block with no trailing newline", () => {
+    const md = [
+      "| A | B |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+    ].join("\n");
+    const html = renderMarkdown(md);
+    expect(html).toContain("<table");
+    expect(html).toContain(">1<");
+    expect(html).toContain("2");
+    expect(html).toContain("</table>");
+  });
+
+  it("renders a table preceded by a paragraph with no blank line", () => {
+    const md = [
+      "Here are the results",
+      "| A | B |",
+      "| --- | --- |",
+      "| 1 | 2 |",
+    ].join("\n");
+    const html = renderMarkdown(md);
+    expect(html).toContain("<table");
+    expect(html).toContain("Here are the results");
+    expect(html).toContain(">1<");
+  });
+});
+
 describe("Markdown media support", () => {
   it("renders a MEDIA: line as an image", () => {
     const html = renderMarkdown("MEDIA:/home/hermes/.hermes/images/test.png");

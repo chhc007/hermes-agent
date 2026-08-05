@@ -64,6 +64,20 @@ type BlockNode =
 /*  Block parser                                                       */
 /* ------------------------------------------------------------------ */
 
+/** A pipe row followed by a GFM separator row (`| --- | :---: | …`). */
+const SEPARATOR_RE = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+const TABLE_HEADER_RE = /^\s*\|?[^|]+\|/;
+
+function isTableStart(lines: string[], i: number): boolean {
+  const line = lines[i];
+  return (
+    Boolean(line) &&
+    line.includes("|") &&
+    TABLE_HEADER_RE.test(line) &&
+    SEPARATOR_RE.test(lines[i + 1] ?? "")
+  );
+}
+
 function parseBlocks(text: string): BlockNode[] {
   const lines = text.split("\n");
   const blocks: BlockNode[] = [];
@@ -130,7 +144,7 @@ function parseBlocks(text: string): BlockNode[] {
 
     // Table — pipe-delimited rows: a header row, a separator row
     // (---|---), then body rows. Stops at the first non-table line.
-    if (line.includes("|") && /^\s*\|?[^|]+\|/.test(line) && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[i + 1] ?? "")) {
+    if (isTableStart(lines, i)) {
       const cells = (row: string): string[] =>
         row
           .trim()
@@ -176,6 +190,7 @@ function parseBlocks(text: string): BlockNode[] {
     while (
       i < lines.length &&
       lines[i].trim() !== "" &&
+      !isTableStart(lines, i) &&
       !lines[i].match(/^```/) &&
       !lines[i].match(/^#{1,4}\s/) &&
       !lines[i].match(/^[-*+]\s/) &&
