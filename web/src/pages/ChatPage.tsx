@@ -32,6 +32,9 @@ import { useSearchParams } from "react-router";
 
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
+import { ChatInput } from "@/components/ChatInput";
+import { ChatMessageList } from "@/components/ChatMessageList";
+import { useChatEventStream } from "@/lib/chat-event-stream";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
@@ -329,6 +332,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const titleScope = `${channel}\0${reconnectNonce}`;
   const sessionTitle =
     sessionTitleState.scope === titleScope ? sessionTitleState.title : null;
+
+  // Structured chat view vs. the raw xterm terminal. Chat view (default)
+  // renders a bubble layout driven off the /api/events feed; the terminal
+  // always stays mounted (hidden) so the PTY keeps running and events keep
+  // flowing regardless of which view is selected.
+  const [activeView, setActiveView] = useState<"chat" | "terminal">("chat");
+  const chatStream = useChatEventStream(channel);
   const handleSessionTitleChange = useCallback(
     (title: string | null) => setSessionTitleState({ scope: titleScope, title }),
     [titleScope],
@@ -469,6 +479,49 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     copyResetRef.current = setTimeout(() => setCopyState("idle"), 1500);
     termRef.current?.focus();
   };
+
+  // Chat-view composer: the user's typed prompt is written straight into the
+  // SAME PTY WebSocket the xterm terminal would send keystrokes over. Sending
+  // the text as a burst then a Return mimics a paste-and-submit so Ink's
+  // tokenizer emits the composer content in one go (same rhythm as
+  // handleCopyLast). Returns false when the socket isn't open, so the UI can
+  // surface a "not connected" state.
+  const sendChatPrompt = useCallback((text: string) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      return false;
+    }
+    ws.send(text);
+    ws.send("\r");
+    return true;
+  }, []);
+
+  // Route image files from the chat composer through the same upload→/image
+  // attach pipeline the xterm paste/drop path uses.
+  const handleChatImages = useCallback(
+    (files: File[]) => {
+      if (!files.length) return;
+      void (async () => {
+        for (const file of files) {
+          const uploaded = await uploadChatImage(file, scopedProfile);
+          const ws = wsRef.current;
+          if (!ws || ws.readyState !== WebSocket.OPEN) {
+            setBanner("Image uploaded, but chat is not connected — try again.");
+            return;
+          }
+          ws.send(`/image ${uploaded.path}`);
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+          const s = wsRef.current;
+          if (!s || s.readyState !== WebSocket.OPEN) return;
+          s.send("\r");
+        }
+      })().catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        setBanner(`Image upload failed: ${message}`);
+      });
+    },
+    [scopedProfile],
+  );
 
   useEffect(() => {
     // Don't spawn the chat PTY (and the TUI/agent bootstrap it triggers)
@@ -1519,9 +1572,61 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             boxShadow: "0 8px 32px rgba(0, 0, 0, 0.4)",
           }}
         >
+          {/* View switcher: structured chat (default) / raw terminal. */}
+          <div className="z-30 flex shrink-0 items-center justify-end gap-1 pb-2">
+            <div
+              className="inline-flex items-center rounded-md border border-current/20 bg-black/20 p-0.5"
+              role="tablist"
+              aria-label="Chat view"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeView === "chat"}
+                onClick={() => setActiveView("chat")}
+                className={cn(
+                  "rounded px-2 py-0.5 text-xs font-medium tracking-wide transition-colors",
+                  activeView === "chat"
+                    ? "bg-white/15 text-midground"
+                    : "text-text-tertiary hover:text-text-secondary",
+                )}
+              >
+                Chat
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeView === "terminal"}
+                onClick={() => setActiveView("terminal")}
+                className={cn(
+                  "rounded px-2 py-0.5 text-xs font-medium tracking-wide transition-colors",
+                  activeView === "terminal"
+                    ? "bg-white/15 text-midground"
+                    : "text-text-tertiary hover:text-text-secondary",
+                )}
+              >
+                Terminal
+              </button>
+            </div>
+          </div>
+
+          {activeView === "chat" && (
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
+              <ChatMessageList messages={chatStream.messages} className="rounded-md" />
+              <ChatInput
+                onSend={sendChatPrompt}
+                onImages={handleChatImages}
+                disabled={ptyState !== "open"}
+              />
+            </div>
+          )}
+
           <div
             ref={hostRef}
-            className="hermes-chat-xterm-host min-h-0 min-w-0 flex-1"
+            className={cn(
+              "hermes-chat-xterm-host min-h-0 min-w-0 flex-1",
+              activeView !== "terminal" && "hidden",
+            )}
           />
 
           {showReconnectOverlay && (
@@ -1576,30 +1681,32 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             </div>
           )}
 
-          <Button
-            ghost
-            onClick={handleCopyLast}
-            title="Copy last assistant response as raw markdown"
-            aria-label="Copy last assistant response"
-            className={cn(
-              "absolute z-10",
-              "normal-case tracking-normal font-normal",
-              "rounded border border-current/30",
-              "bg-black/20",
-              "opacity-70 hover:opacity-100 hover:border-current/60",
-              "transition-opacity duration-150",
-              "bottom-2 right-2 px-2 py-1 text-xs sm:bottom-3 sm:right-3 sm:px-2.5 sm:py-1.5",
-              "lg:bottom-4 lg:right-4",
-            )}
-            style={{ color: terminalFg }}
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <Copy className="h-3 w-3 shrink-0" />
-              <span className="hidden min-[400px]:inline tracking-wide">
-                {copyState === "copied" ? "copied" : "copy last response"}
+          {activeView === "terminal" && (
+            <Button
+              ghost
+              onClick={handleCopyLast}
+              title="Copy last assistant response as raw markdown"
+              aria-label="Copy last assistant response"
+              className={cn(
+                "absolute z-10",
+                "normal-case tracking-normal font-normal",
+                "rounded border border-current/30",
+                "bg-black/20",
+                "opacity-70 hover:opacity-100 hover:border-current/60",
+                "transition-opacity duration-150",
+                "bottom-2 right-2 px-2 py-1 text-xs sm:bottom-3 sm:right-3 sm:px-2.5 sm:py-1.5",
+                "lg:bottom-4 lg:right-4",
+              )}
+              style={{ color: terminalFg }}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Copy className="h-3 w-3 shrink-0" />
+                <span className="hidden min-[400px]:inline tracking-wide">
+                  {copyState === "copied" ? "copied" : "copy last response"}
+                </span>
               </span>
-            </span>
-          </Button>
+            </Button>
+          )}
         </div>
 
         {!narrow && (

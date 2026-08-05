@@ -1,0 +1,205 @@
+// @vitest-environment node
+import { describe, expect, it } from "vitest";
+
+import {
+  buildEventFrame,
+  chatEventStreamReducer,
+  createInitialState,
+  parseEventFrame,
+  type ChatEventStreamState,
+  type ToolStatus,
+} from "./chat-event-stream";
+
+/** Run a sequence of event frames through the reducer. */
+function reduce(events: Array<[string, unknown?]>) {
+  let state = createInitialState();
+  for (const [type, payload] of events) {
+    state = chatEventStreamReducer(state, { type: "event", eventType: type, payload });
+  }
+  return state;
+}
+
+function init(messages: ChatEventStreamState["messages"] = []): ChatEventStreamState {
+  return { messages, connectionState: "open", error: null, sessionTitle: null };
+}
+
+describe("parseEventFrame", () => {
+  it("parses a well-formed event frame", () => {
+    const frame = parseEventFrame(buildEventFrame("tool.start", { tool_id: "1" }));
+    expect(frame).toEqual({ type: "tool.start", payload: { tool_id: "1" } });
+  });
+
+  it("returns null for non-event frames", () => {
+    expect(parseEventFrame(JSON.stringify({ jsonrpc: "2.0", method: "ping" }))).toBeNull();
+    expect(parseEventFrame("not json")).toBeNull();
+    expect(parseEventFrame(JSON.stringify({ method: "event", params: {} }))).toBeNull();
+  });
+});
+
+describe("session.info", () => {
+  it("records the title from a session.info frame", () => {
+    const state = reduce([["session.info", { title: "My session" }]]);
+    expect(state.sessionTitle).toBe("My session");
+  });
+});
+
+describe("full turn: thinking + tools + streamed prose", () => {
+  it("assembles a complete assistant message with a thought block and a tool card", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["thinking.delta", { text: "Let me think about" }],
+      ["thinking.delta", { text: " this." }],
+      ["tool.start", { tool_id: "t1", name: "read_file", args_text: "param=value", context: "foo" }],
+      ["tool.progress", { name: "read_file", preview: "reading…" }],
+      ["tool.complete", { tool_id: "t1", name: "read_file", summary: "3 lines", duration_s: 0.5, result_text: "x" }],
+      ["message.delta", { text: "Here is the" }],
+      ["message.delta", { text: " answer." }],
+      ["message.complete", { text: "" }],
+    ]);
+
+    expect(state.messages).toHaveLength(1);
+    const [msg] = state.messages;
+    expect(msg.role).toBe("assistant");
+    expect(msg.status).toBe("complete");
+    expect(msg.thinking?.replace(/\s+/g, " ").trim()).toBe("Let me think about this.");
+    expect(msg.text?.replace(/\s+/g, " ").trim()).toBe("Here is the answer.");
+    expect(msg.tools).toHaveLength(1);
+    const tool = msg.tools![0];
+    expect(tool.name).toBe("read_file");
+    expect(tool.status).toBe("complete");
+    expect(tool.summary).toBe("3 lines");
+  });
+
+  it("marks a tool with error as status error", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["tool.start", { tool_id: "t1", name: "terminal" }],
+      ["tool.complete", { tool_id: "t1", name: "terminal", error: "command failed", duration_s: 0.1 }],
+      ["message.complete", { text: "done" }],
+    ]);
+    const tool = state.messages[0]!.tools![0];
+    expect(tool.status).toBe("error");
+    expect(tool.error).toBe("command failed");
+  });
+});
+
+describe("turn boundaries", () => {
+  it("message.start opens a fresh message and seals the previous one", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["message.delta", { text: "first turn" }],
+      ["message.complete", { text: "" }],
+      ["message.start", {}],
+    ]);
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[0]!.status).toBe("complete");
+    expect(state.messages[1]!.status).toBe("streaming");
+  });
+
+  it("message.complete without a prior message.start synthesizes a message", () => {
+    const state = reduce([["message.complete", { text: "error only" }]]);
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]!.text).toBe("error only");
+    expect(state.messages[0]!.status).toBe("complete");
+  });
+
+  it("streaming deltas accumulate into prose", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["message.delta", { text: "A" }],
+      ["message.delta", { text: "B" }],
+      ["message.delta", { text: "C" }],
+    ]);
+    expect(state.messages[0]!.text).toBe("ABC");
+    expect(state.messages[0]!.status).toBe("streaming");
+  });
+});
+
+describe("tool lifecycle edge cases", () => {
+  it("tool.start attaches to the current assistant message when no prose yet", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["tool.start", { tool_id: "t9", name: "web_search" }],
+    ]);
+    const [msg] = state.messages;
+    expect(msg.tools).toHaveLength(1);
+    expect(msg.tools![0]!.status).toBe("running");
+  });
+
+  it("multiple tools on one message stay distinct by tool_id", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["tool.start", { tool_id: "a", name: "read_file" }],
+      ["tool.start", { tool_id: "b", name: "web_search" }],
+      ["tool.complete", { tool_id: "a", name: "read_file" }],
+    ]);
+    const tools = state.messages[0]!.tools!;
+    expect(tools).toHaveLength(2);
+    const byId: Record<string, ToolStatus> = {};
+    for (const t of tools) byId[t.tool_id] = t.status;
+    expect(byId.a).toBe("complete");
+    expect(byId.b).toBe("running");
+  });
+
+  it("tool.progress for an unknown tool is a no-op", () => {
+    const before = init([
+      { id: "m1", role: "assistant", status: "streaming", ts: 1 },
+    ]);
+    const after = chatEventStreamReducer(before, {
+      type: "event",
+      eventType: "tool.progress",
+      payload: { name: "nope", preview: "x" },
+    });
+    expect(after).toBe(before);
+  });
+
+  it("tool.complete preserves earlier fields when payload omits them", () => {
+    const before = init([
+      {
+        id: "m1",
+        role: "assistant",
+        status: "streaming",
+        ts: 1,
+        tools: [{ tool_id: "a", name: "read_file", status: "running" as const }],
+      },
+    ]);
+    const after = chatEventStreamReducer(before, {
+      type: "event",
+      eventType: "tool.complete",
+      payload: { tool_id: "a", name: "read_file", duration_s: 1.2 },
+    });
+    expect(after.messages[0]!.tools![0]!.status).toBe("complete");
+    expect(after.messages[0]!.tools![0]!.duration_s).toBe(1.2);
+  });
+});
+
+describe("reasoning", () => {
+  it("final message.complete uses streamed thinking and ignores reasoning when both present", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["reasoning.delta", { text: "streamed thinking" }],
+      ["message.complete", { text: "answer", reasoning: "final reasoning" }],
+    ]);
+    expect(state.messages[0]!.thinking).toBe("streamed thinking");
+    expect(state.messages[0]!.text).toBe("answer");
+  });
+
+  it("falls back to message.complete.reasoning when no deltas streamed", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["message.complete", { text: "answer", reasoning: "final reasoning" }],
+    ]);
+    expect(state.messages[0]!.thinking).toBe("final reasoning");
+  });
+});
+
+describe("ignored / unit events", () => {
+  it("reacts and unknown events do not change message list", () => {
+    const state = reduce([
+      ["reaction", {}],
+      ["unknown.event", { some: 1 }],
+      ["notification.show", { text: "hi" }],
+    ]);
+    expect(state.messages).toEqual([]);
+  });
+});

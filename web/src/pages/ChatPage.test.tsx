@@ -77,6 +77,14 @@ vi.mock("@/components/ChatSidebar", () => ({
 vi.mock("@/components/ChatSessionList", () => ({
   ChatSessionList: () => null,
 }));
+vi.mock("@/lib/chat-event-stream", () => ({
+  useChatEventStream: () => ({
+    messages: [],
+    connectionState: "connecting",
+    error: null,
+    sessionTitle: null,
+  }),
+}));
 vi.mock("@/components/Backdrop", () => ({ Backdrop: () => null }));
 vi.mock("@/plugins", () => ({
   PluginSlot: () => null,
