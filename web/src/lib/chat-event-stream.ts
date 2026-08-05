@@ -40,12 +40,43 @@ export interface ToolCallInfo {
 
 export type ChatMessageRole = "user" | "assistant" | "system";
 
+/** A single piece of assistant output in arrival order. */
+export interface ThinkingSegment {
+  kind: "thinking";
+  text: string;
+}
+
+export interface ToolSegment {
+  kind: "tool";
+  toolId: string;
+  name: string;
+  argsText?: string;
+  status: ToolStatus;
+  summary?: string;
+  durationS?: number;
+  resultText?: string;
+  /** Error reason when status is "error" (surfaces in the tool card). */
+  error?: string;
+}
+
+export interface TextSegment {
+  kind: "text";
+  text: string;
+}
+
+export type ChatSegment = ThinkingSegment | ToolSegment | TextSegment;
+
 export interface ChatMessage {
   id: string;
   role: ChatMessageRole;
-  text?: string;
-  thinking?: string;
-  tools?: ToolCallInfo[];
+  /** Ordered segments: thinking/tool/text recorded in event-arrival order.
+   *  Optional because legacy / locally-synthesized payloads (user & system
+   *  bubbles, pre-segment history) carry only derived text/thinking/tools. */
+  segments?: ChatSegment[];
+  /** Derived from segments for backward-compat with external callers. */
+  text?: string; // last text segment's content
+  thinking?: string; // all thinking segments joined with "\n"
+  tools?: ToolCallInfo[]; // all tool segments converted
   status: "streaming" | "complete";
   ts: number;
 }
@@ -104,26 +135,56 @@ function truncateArgs(args?: string): string | undefined {
   return text.length > 600 ? `${text.slice(0, 600)}…` : text;
 }
 
+/** Extract the trailing text of a segment as accumulated equivalent of
+ *  `m.text`. Last text segment's content (undefined if none). */
+function segmentText(segments: ChatSegment[]): string | undefined {
+  for (let i = segments.length - 1; i >= 0; i -= 1) {
+    const s = segments[i];
+    if (s.kind === "text") return s.text;
+  }
+  return undefined;
+}
+
+/** Join all thinking segments with "\n". */
+function segmentThinking(segments: ChatSegment[]): string | undefined {
+  const parts = segments
+    .filter((s): s is ThinkingSegment => s.kind === "thinking")
+    .map((s) => s.text);
+  return parts.length ? parts.join("\n") : undefined;
+}
+
+/** Convert all tool segments to ToolCallInfo[]. */
+function segmentTools(segments: ChatSegment[]): ToolCallInfo[] {
+  return segments
+    .filter((s): s is ToolSegment => s.kind === "tool")
+    .map((s) => ({
+      tool_id: s.toolId,
+      name: s.name,
+      args_text: s.argsText,
+      status: s.status,
+      summary: s.summary,
+      duration_s: s.durationS,
+      result_text: s.resultText,
+      error: s.error,
+    }));
+}
+
+/** Build a ChatMessage whose derived text/thinking/tools mirror `segments`. */
+function withSegments(
+  message: ChatMessage,
+  segments: ChatSegment[],
+): ChatMessage {
+  const text = segmentText(segments);
+  const thinking = segmentThinking(segments);
+  const tools = segmentTools(segments);
+  return { ...message, segments, text, thinking, tools: tools.length ? tools : undefined };
+}
+
 function lastAssistantIndex(state: ChatEventStreamState): number {
   for (let i = state.messages.length - 1; i >= 0; i -= 1) {
     if (state.messages[i].role === "assistant") return i;
   }
   return -1;
-}
-
-function upsertTool(
-  tools: ToolCallInfo[],
-  toolId: string,
-  patch: (t: ToolCallInfo) => ToolCallInfo,
-): ToolCallInfo[] {
-  const idx = tools.findIndex((t) => t.tool_id === toolId);
-  if (idx < 0) {
-    return [
-      ...tools,
-      patch({ tool_id: toolId, name: "tool", status: "running" }),
-    ];
-  }
-  return tools.map((t, i) => (i === idx ? patch(t) : t));
 }
 
 /** Close any open streaming message (mark it complete) so a new turn's
@@ -142,7 +203,13 @@ function openStreamingMessage(state: ChatEventStreamState): ChatEventStreamState
     ...sealed,
     messages: [
       ...sealed.messages,
-      { id: nextId(), role: "assistant", status: "streaming", ts: Date.now() },
+      {
+        id: nextId(),
+        role: "assistant",
+        status: "streaming",
+        ts: Date.now(),
+        segments: [],
+      },
     ],
   };
 }
@@ -187,7 +254,7 @@ export function chatEventStreamReducer(
       ...state,
       messages: [
         ...state.messages,
-        { id: nextId(), role: "user", text, status: "complete", ts: Date.now() },
+        { id: nextId(), role: "user", text, status: "complete", ts: Date.now(), segments: [] },
       ],
     };
   }
@@ -243,63 +310,66 @@ export function chatEventStreamReducer(
     case "message.delta": {
       const text = asRawString(p.text);
       if (!text || idx < 0) return state;
+      const segments = state.messages[idx].segments ?? [];
       return {
         ...state,
-        messages: state.messages.map((m, i) =>
-          i === idx
-            ? { ...m, text: `${m.text ?? ""}${text}`, status: "streaming" }
-            : m,
-        ),
+        messages: state.messages.map((m, i) => {
+          if (i !== idx) return m;
+          const last = segments[segments.length - 1];
+          let next: ChatSegment[];
+          if (last && last.kind === "text") {
+            // Append to the current text segment.
+            next = segments.map((s, si) => (si === segments.length - 1 ? { ...last, text: last.text + text } : s));
+          } else {
+            // thinking→text transition or first text: open a new text segment.
+            next = [...segments, { kind: "text" as const, text }];
+          }
+          return withSegments({ ...m, status: "streaming" as const }, next);
+        }),
       };
     }
 
     case "message.complete": {
       const finalText = asString(p.text) ?? "";
       const reasonFull = asString(p.reasoning);
+      const finalize = (msg: ChatMessage): ChatMessage => {
+        const segments = msg.segments ?? [];
+        const hasThinking = segments.some((s) => s.kind === "thinking");
+        let next = segments;
+        // Replace the last text segment with the FULL final response when
+        // provided (finalTail semantics), preserving segment identity for
+        // earlier finished segments. Edge: a text segment may not exist yet if
+        // only complete arrives — then push one.
+        const lastTextIdx = next.map((s) => s.kind).lastIndexOf("text");
+        if (lastTextIdx >= 0) {
+          const t = next[lastTextIdx] as TextSegment;
+          next = next.map((s, si) =>
+            si === lastTextIdx && finalText ? { ...t, text: finalText } : s,
+          );
+        } else if (finalText) {
+          next = [...next, { kind: "text" as const, text: finalText }];
+        }
+        // Reasoning fallback: prefer the streamed thinking segments, else the
+        // complete frame's reasoning field.
+        if (!hasThinking && reasonFull) {
+          next = [...next, { kind: "thinking" as const, text: reasonFull }];
+        }
+        return withSegments({ ...msg, status: "complete" as const }, next);
+      };
       if (idx >= 0) {
         return {
           ...state,
-          messages: state.messages.map((m, i) => {
-            if (i !== idx) {
-              return m.status === "streaming" ? { ...m, status: "complete" as const } : m;
-            }
-            // The complete frame's `text` is the FULL final response (the
-            // official TUI strips streamed prefixes via finalTail before
-            // appending), so replace the accumulated delta body instead of
-            // concatenating — appending would duplicate everything streamed
-            // so far. Same for reasoning: prefer the delta-thinking already
-            // shown, else the complete frame's reasoning field.
-            const body = finalText || (m.text ?? "").trim();
-            return {
-              ...m,
-              text: body,
-              status: "complete" as const,
-              thinking:
-                m.thinking && m.thinking.trim()
-                  ? m.thinking
-                  : reasonFull
-                    ? reasonFull
-                    : undefined,
-            };
-          }),
+          messages: state.messages.map((m, i) =>
+            i !== idx ? (m.status === "streaming" ? { ...m, status: "complete" as const } : m) : finalize(m),
+          ),
         };
       }
       // A turn ended without a message.start (e.g. an error-only turn).
-      // Synthesize a complete assistant message carrying the final text.
       const fresh = openStreamingMessage(state);
       const last = fresh.messages.length - 1;
       return {
         ...fresh,
-        messages: fresh.messages.map((m, i) =>
-          i === last
-            ? {
-                ...m,
-                text: finalText,
-                status: "complete" as const,
-                thinking: reasonFull,
-              }
-            : m,
-        ),
+        messages: fresh.messages.map((m, i) => (i === last ? finalize(m) : m)),
       };
     }
 
@@ -307,11 +377,19 @@ export function chatEventStreamReducer(
     case "reasoning.delta": {
       const text = asRawString(p.text);
       if (!text || idx < 0) return state;
+      const segments = state.messages[idx].segments ?? [];
+      const last = segments[segments.length - 1];
+      let next: ChatSegment[];
+      if (last && last.kind === "thinking") {
+        next = segments.map((s, si) =>
+          si === segments.length - 1 ? { ...last, text: last.text + text } : s,
+        );
+      } else {
+        next = [...segments, { kind: "thinking" as const, text }];
+      }
       return {
         ...state,
-        messages: state.messages.map((m, i) =>
-          i === idx ? { ...m, thinking: `${m.thinking ?? ""}${text}` } : m,
-        ),
+        messages: state.messages.map((m, i) => (i === idx ? withSegments(m, next) : m)),
       };
     }
 
@@ -320,33 +398,35 @@ export function chatEventStreamReducer(
       if (!toolId) return state;
       const name = asString(p.name) ?? "tool";
       const args = truncateArgs(asString(p.args_text));
+      const toolSeg: ToolSegment = {
+        kind: "tool",
+        toolId,
+        name,
+        argsText: args,
+        status: "running",
+      };
+      const attach = (m: ChatMessage): ChatMessage => {
+        const segments = m.segments ?? [];
+        const existing = segments.find((s): s is ToolSegment => s.kind === "tool" && s.toolId === toolId);
+        let next: ChatSegment[];
+        if (existing) {
+          next = [...segments];
+        } else {
+          next = [...segments, toolSeg];
+        }
+        return withSegments(m, next);
+      };
       if (idx >= 0) {
         return {
           ...state,
-          messages: state.messages.map((m, i) =>
-            i === idx
-              ? {
-                  ...m,
-                  tools: upsertTool(m.tools ?? [], toolId, (t) => ({
-                    ...t,
-                    name,
-                    args_text: args ?? t.args_text,
-                    status: "running",
-                  })),
-                }
-              : m,
-          ),
+          messages: state.messages.map((m, i) => (i === idx ? attach(m) : m)),
         };
       }
       const fresh = openStreamingMessage(state);
       const last = fresh.messages.length - 1;
       return {
         ...fresh,
-        messages: fresh.messages.map((m, i) =>
-          i === last
-            ? { ...m, tools: [{ tool_id: toolId, name, status: "running", args_text: args }] }
-            : m,
-        ),
+        messages: fresh.messages.map((m, i) => (i === last ? attach(m) : m)),
       };
     }
 
@@ -354,18 +434,17 @@ export function chatEventStreamReducer(
       const preview = asString(p.preview);
       const name = asString(p.name);
       if (!preview || !name || idx < 0) return state;
+      const segments = state.messages[idx].segments ?? [];
       let matched = false;
-      const tools = (state.messages[idx].tools ?? []).map((t) => {
-        if (t.name === name) {
-          matched = true;
-          return { ...t, preview };
-        }
-        return t;
+      const next = segments.map((s): ChatSegment => {
+        if (s.kind !== "tool" || s.name !== name) return s;
+        matched = true;
+        return { ...s, argsText: preview };
       });
       if (!matched) return state;
       return {
         ...state,
-        messages: state.messages.map((m, i) => (i === idx ? { ...m, tools } : m)),
+        messages: state.messages.map((m, i) => (i === idx ? withSegments(m, next) : m)),
       };
     }
 
@@ -380,24 +459,25 @@ export function chatEventStreamReducer(
       const error = asString(p.error);
       const status: ToolStatus = error ? "error" : "complete";
       const duration = typeof p.duration_s === "number" ? p.duration_s : undefined;
+      const name = asString(p.name);
+      const summary = asString(p.summary);
+      const resultText = asString(p.result_text);
+      const segments = state.messages[idx].segments ?? [];
+      const next = segments.map((s): ChatSegment => {
+        if (s.kind !== "tool" || s.toolId !== toolId) return s;
+        return {
+          ...s,
+          name: name ?? s.name,
+          status,
+          summary: summary ?? s.summary,
+          durationS: duration ?? s.durationS,
+          resultText: resultText ?? s.resultText,
+          error: error ?? s.error,
+        };
+      });
       return {
         ...state,
-        messages: state.messages.map((m, i) =>
-          i === idx
-            ? {
-                ...m,
-                tools: upsertTool(m.tools ?? [], toolId, (t) => ({
-                  ...t,
-                  name: asString(p.name) ?? t.name,
-                  status,
-                  error: error ?? t.error,
-                  summary: asString(p.summary) ?? t.summary,
-                  duration_s: duration ?? t.duration_s,
-                  result_text: asString(p.result_text) ?? t.result_text,
-                })),
-              }
-            : m,
-        ),
+        messages: state.messages.map((m, i) => (i === idx ? withSegments(m, next) : m)),
       };
     }
 
@@ -474,28 +554,36 @@ export function sessionMessagesToChatMessages(
       out.push({ id: nextId(), role, text, status: "complete", ts });
       continue;
     }
-    // Assistant: fold tool_calls into tool cards; keep body text when present.
-    const tools: ToolCallInfo[] = Array.isArray(m.tool_calls)
+    // Assistant: fold tool_calls into tool segments (placed BEFORE the text
+    // segment — history has no exact order, so "tools first then reply" is the
+    // reasonable approximation); keep body text as a trailing text segment.
+    const toolSegs: ToolSegment[] = Array.isArray(m.tool_calls)
       ? (m.tool_calls as Array<Record<string, unknown>>)
           .filter((tc) => tc && typeof tc === "object")
           .map((tc, i) => {
             const fn = tc.function as Record<string, unknown> | undefined;
             return {
-              tool_id: String(tc.id ?? `hist-${i}`),
+              kind: "tool" as const,
+              toolId: String(tc.id ?? `hist-${i}`),
               name: String(fn?.name ?? "tool"),
-              args_text: typeof fn?.arguments === "string" ? truncateArgs(fn.arguments) : undefined,
+              argsText: typeof fn?.arguments === "string" ? truncateArgs(fn.arguments) : undefined,
               status: "complete" as const,
             };
           })
       : [];
-    out.push({
-      id: nextId(),
-      role,
-      text: text?.trim() || undefined,
-      tools: tools.length ? tools : undefined,
-      status: "complete",
-      ts,
-    });
+    const body = text?.trim() || undefined;
+    const segments: ChatSegment[] = [
+      ...toolSegs,
+      ...(body ? [{ kind: "text" as const, text: body }] : []),
+    ];
+    out.push(
+      withSegments({
+        id: nextId(),
+        role,
+        status: "complete",
+        ts,
+      }, segments),
+    );
   }
   return out;
 }

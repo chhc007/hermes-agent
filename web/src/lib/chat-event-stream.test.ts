@@ -167,6 +167,9 @@ describe("tool lifecycle edge cases", () => {
         role: "assistant",
         status: "streaming",
         ts: 1,
+        segments: [
+          { kind: "tool" as const, toolId: "a", name: "read_file", status: "running" as const },
+        ],
         tools: [{ tool_id: "a", name: "read_file", status: "running" as const }],
       },
     ]);
@@ -177,6 +180,7 @@ describe("tool lifecycle edge cases", () => {
     });
     expect(after.messages[0]!.tools![0]!.status).toBe("complete");
     expect(after.messages[0]!.tools![0]!.duration_s).toBe(1.2);
+    expect(after.messages[0]!.segments![0]).toMatchObject({ status: "complete", durationS: 1.2 });
   });
 });
 
@@ -345,6 +349,117 @@ describe("clarify.request", () => {
     expect(withCard.clarify).not.toBeNull();
     const cleared = chatEventStreamReducer(withCard, { type: "clarify_answered" });
     expect(cleared.clarify).toBeNull();
+  });
+});
+
+describe("segments ordering", () => {
+  it("thinking→text switch produces two ordered segments", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["thinking.delta", { text: "compute" }],
+      ["message.delta", { text: "answer" }],
+      ["message.complete", { text: "" }],
+    ]);
+    const segs = state.messages[0]!.segments!;
+    expect(segs.map((s) => s.kind)).toEqual(["thinking", "text"]);
+    expect(segs[0]!.kind).toBe("thinking");
+    expect(segs[1]!.kind).toBe("text");
+  });
+
+  it("text→thinking→text interleaves in arrival order", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["message.delta", { text: "lead" }],
+      ["thinking.delta", { text: "think" }],
+      ["message.delta", { text: " tail" }],
+    ]);
+    const segs = state.messages[0]!.segments!;
+    expect(segs.map((s) => s.kind)).toEqual(["text", "thinking", "text"]);
+  });
+
+  it("tool.start appends a tool segment in order", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["thinking.delta", { text: "plan" }],
+      ["tool.start", { tool_id: "t1", name: "read_file" }],
+      ["tool.complete", { tool_id: "t1", name: "read_file", duration_s: 0.3 }],
+      ["message.delta", { text: "done" }],
+    ]);
+    const segs = state.messages[0]!.segments!;
+    expect(segs.map((s) => s.kind)).toEqual(["thinking", "tool", "text"]);
+    const toolSeg = segs[1] as { kind: "tool"; toolId: string; status: string };
+    expect(toolSeg.toolId).toBe("t1");
+    expect(toolSeg.status).toBe("complete");
+  });
+
+  it("tool.complete updates the existing tool segment in place", () => {
+    let state = reduce([
+      ["message.start", {}],
+      ["tool.start", { tool_id: "t1", name: "terminal", args_text: "ls" }],
+    ]);
+    const before = state.messages[0]!.segments![0];
+    expect(before).toMatchObject({ kind: "tool", status: "running" });
+
+    state = chatEventStreamReducer(state, {
+      type: "event",
+      eventType: "tool.complete",
+      payload: { tool_id: "t1", name: "terminal", summary: "3 files", duration_s: 0.4 },
+    });
+    const after = state.messages[0]!.segments![0];
+    expect(after.kind).toBe("tool");
+    expect(after).toMatchObject({ status: "complete", durationS: 0.4, summary: "3 files" });
+    // Single tool segment — complete did NOT append a new one.
+    expect(state.messages[0]!.segments!).toHaveLength(1);
+  });
+
+  it("message.complete replaces the last text segment (does not push a new one)", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["message.delta", { text: "partial" }],
+      ["message.delta", { text: " body" }],
+      ["message.complete", { text: "full final body" }],
+    ]);
+    const segs = state.messages[0]!.segments!;
+    expect(segs).toHaveLength(1);
+    expect(segs[0]).toMatchObject({ kind: "text", text: "full final body" });
+  });
+
+  it("derived text/thinking/tools mirror the segments", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["thinking.delta", { text: "think a" }],
+      ["thinking.delta", { text: " think b" }],
+      ["tool.start", { tool_id: "t1", name: "calc" }],
+      ["tool.complete", { tool_id: "t1", name: "calc", duration_s: 1 }],
+      ["message.delta", { text: "body" }],
+      ["message.complete", { text: "final body" }],
+    ]);
+    const msg = state.messages[0]!;
+    expect(msg.thinking).toBe("think a think b");
+    expect(msg.text).toBe("final body");
+    expect(msg.tools).toHaveLength(1);
+    expect(msg.tools![0]).toMatchObject({ tool_id: "t1", status: "complete" });
+  });
+
+  it("keeps object identity for an already-finished text segment across later deltas", () => {
+    let state = reduce([
+      ["message.start", {}],
+      ["message.delta", { text: "finished prose" }],
+      ["thinking.delta", { text: "late thought" }],
+    ]);
+    const finished = state.messages[0]!.segments![0] as { kind: string; text: string };
+    expect(finished.kind).toBe("text");
+
+    // A later delta extends the last (text) segment; the earlier finished
+    // segment object reference must be preserved for memoized rendering.
+    state = chatEventStreamReducer(state, {
+      type: "event",
+      eventType: "message.delta",
+      payload: { text: " trailing" },
+    });
+    const after = state.messages[0]!.segments![0];
+    expect(after).toBe(finished);
+    expect((after as { text: string }).text).toBe("finished prose");
   });
 });
 
