@@ -54,7 +54,8 @@ type BlockNode =
   | { type: "heading"; level: number; content: string }
   | { type: "hr" }
   | { type: "list"; ordered: boolean; items: string[] }
-  | { type: "paragraph"; content: string };
+  | { type: "paragraph"; content: string }
+  | { type: "table"; headers: string[]; rows: string[][] };
 
 /* ------------------------------------------------------------------ */
 /*  Block parser                                                       */
@@ -121,6 +122,29 @@ function parseBlocks(text: string): BlockNode[] {
         i++;
       }
       blocks.push({ type: "list", ordered: true, items });
+      continue;
+    }
+
+    // Table — pipe-delimited rows: a header row, a separator row
+    // (---|---), then body rows. Stops at the first non-table line.
+    if (line.includes("|") && /^\s*\|?[^|]+\|/.test(line) && /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[i + 1] ?? "")) {
+      const cells = (row: string): string[] =>
+        row
+          .trim()
+          .replace(/^\|/, "")
+          .replace(/\|$/, "")
+          .split("|")
+          .map((c) => c.trim());
+      const headers = cells(line);
+      const rows: string[][] = [];
+      i += 2; // skip header + separator
+      while (i < lines.length && lines[i].trim() !== "" && lines[i].includes("|")) {
+        rows.push(cells(lines[i]));
+        i++;
+      }
+      if (headers.length > 0) {
+        blocks.push({ type: "table", headers, rows });
+      }
       continue;
     }
 
@@ -223,6 +247,41 @@ function Block({
           <InlineContent text={block.content} highlightTerms={highlightTerms} />
           {caret}
         </p>
+      );
+
+    case "table":
+      return (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                {block.headers.map((h, i) => (
+                  <th
+                    key={i}
+                    className="border border-border/60 bg-secondary/40 px-2 py-1 text-left font-semibold text-foreground"
+                  >
+                    <InlineContent text={h} highlightTerms={highlightTerms} />
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {block.rows.map((row, ri) => (
+                <tr key={ri} className={ri % 2 === 1 ? "bg-secondary/20" : undefined}>
+                  {row.map((cell, ci) => (
+                    <td
+                      key={ci}
+                      className="border border-border/60 px-2 py-1 align-top text-foreground/90"
+                    >
+                      <InlineContent text={cell} highlightTerms={highlightTerms} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {caret}
+        </div>
       );
   }
 }

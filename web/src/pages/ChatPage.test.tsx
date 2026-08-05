@@ -84,8 +84,10 @@ vi.mock("@/lib/chat-event-stream", () => ({
     connectionState: "connecting",
     error: null,
     sessionTitle: null,
+    clarify: null,
     sendUserMessage: vi.fn(),
     loadHistory: vi.fn(),
+    respondClarify: vi.fn(async () => true),
   }),
 }));
 vi.mock("@/components/Backdrop", () => ({ Backdrop: () => null }));

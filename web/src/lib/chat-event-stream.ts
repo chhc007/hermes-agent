@@ -52,18 +52,28 @@ export interface ChatMessage {
 
 export type ConnectionState = "connecting" | "open" | "closed" | "error";
 
+/** Pending clarify (multi-choice) request surfaced by the agent. */
+export interface ClarifyRequest {
+  requestId: string;
+  question: string;
+  choices: string[] | null;
+  multiSelect: boolean;
+}
+
 export interface ChatEventStreamState {
   messages: ChatMessage[];
   connectionState: ConnectionState;
   error: string | null;
   sessionTitle: string | null;
+  clarify: ClarifyRequest | null;
 }
 
 export type ChatEventStreamAction =
   | { type: "event"; eventType: string; payload: unknown }
   | { type: "connection"; connectionState: ConnectionState; error?: string | null }
   | { type: "user_message"; text: string }
-  | { type: "history"; messages: ChatMessage[] };
+  | { type: "history"; messages: ChatMessage[] }
+  | { type: "clarify_answered" };
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -141,7 +151,13 @@ function openStreamingMessage(state: ChatEventStreamState): ChatEventStreamState
 /* ------------------------------------------------------------------ */
 
 export function createInitialState(): ChatEventStreamState {
-  return { messages: [], connectionState: "connecting", error: null, sessionTitle: null };
+  return {
+    messages: [],
+    connectionState: "connecting",
+    error: null,
+    sessionTitle: null,
+    clarify: null,
+  };
 }
 
 export function chatEventStreamReducer(
@@ -178,6 +194,11 @@ export function chatEventStreamReducer(
     return { ...state, messages: action.messages };
   }
 
+  // Clear the pending clarify card once an answer has been submitted.
+  if (action.type === "clarify_answered") {
+    return { ...state, clarify: null };
+  }
+
   const { eventType, payload } = action;
   const p = (payload ?? {}) as Record<string, unknown>;
   const idx = lastAssistantIndex(state);
@@ -188,6 +209,28 @@ export function chatEventStreamReducer(
         ...state,
         sessionTitle: asString(p.title) ?? state.sessionTitle,
       };
+
+    case "clarify.request": {
+      const requestId = asString(p.request_id);
+      const question = asString(p.question);
+      if (!requestId || !question) return state;
+      const rawChoices = Array.isArray(p.choices) ? p.choices : null;
+      const choices = rawChoices
+        ? (rawChoices as unknown[])
+            .filter((c): c is string => typeof c === "string")
+            .map((c) => c.trim())
+            .filter(Boolean)
+        : null;
+      return {
+        ...state,
+        clarify: {
+          requestId,
+          question,
+          choices: choices && choices.length > 0 ? choices : null,
+          multiSelect: p.multi_select === true && (choices?.length ?? 0) > 1,
+        },
+      };
+    }
 
     case "message.start":
       return openStreamingMessage(state);
@@ -470,6 +513,7 @@ export function useChatEventStream(channel: string) {
     connectionState: "connecting" as ConnectionState,
     error: null,
     sessionTitle: null,
+    clarify: null,
   }));
 
   // Composer hook: locally append the user's own bubble (the /api/events
@@ -483,6 +527,29 @@ export function useChatEventStream(channel: string) {
   const loadHistory = useCallback((messages: ChatMessage[]) => {
     dispatch({ type: "history", messages });
   }, []);
+
+  // Submit a clarify answer over the JSON-RPC sidecar (/api/ws). The
+  // gateway's clarify.respond only needs request_id + answer. On success
+  // (or an expired-but-acknowledged reply) clear the pending card.
+  const respondClarify = useCallback(
+    async (requestId: string, answer: string): Promise<boolean> => {
+      try {
+        const { GatewayClient } = await import("@/lib/gatewayClient");
+        const gw = new GatewayClient();
+        await gw.connect();
+        const res = await gw.request<{ status?: string }>("clarify.respond", {
+          answer,
+          request_id: requestId,
+        });
+        gw.close();
+        dispatch({ type: "clarify_answered" });
+        return res?.status === "ok" || res?.status === "expired";
+      } catch {
+        return false;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!channel) return;
@@ -546,5 +613,5 @@ export function useChatEventStream(channel: string) {
     };
   }, [channel]);
 
-  return { ...state, sendUserMessage, loadHistory };
+  return { ...state, sendUserMessage, loadHistory, respondClarify };
 }

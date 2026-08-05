@@ -34,6 +34,7 @@ import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
 import { ChatInput } from "@/components/ChatInput";
 import { ChatMessageList } from "@/components/ChatMessageList";
+import { ClarifyCard } from "@/components/ClarifyCard";
 import {
   sessionMessagesToChatMessages,
   useChatEventStream,
@@ -346,10 +347,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // (per-render) chatStream object — sendUserMessage/loadHistory are stable.
   const sendUserMessageRef = useRef(chatStream.sendUserMessage);
   const loadHistoryRef = useRef(chatStream.loadHistory);
+  const respondClarifyRef = useRef(chatStream.respondClarify);
   useEffect(() => {
     sendUserMessageRef.current = chatStream.sendUserMessage;
     loadHistoryRef.current = chatStream.loadHistory;
-  }, [chatStream.sendUserMessage, chatStream.loadHistory]);
+    respondClarifyRef.current = chatStream.respondClarify;
+  }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify]);
   const handleSessionTitleChange = useCallback(
     (title: string | null) => setSessionTitleState({ scope: titleScope, title }),
     [titleScope],
@@ -1657,6 +1660,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
           {activeView === "chat" && (
             <div className="flex min-h-0 flex-1 flex-col gap-2">
               <ChatMessageList messages={chatStream.messages} className="rounded-md" />
+              {chatStream.clarify && (
+                <ClarifyCard
+                  clarify={chatStream.clarify}
+                  onAnswer={(requestId, answer) =>
+                    respondClarifyRef.current(requestId, answer)
+                  }
+                />
+              )}
               <ChatInput
                 onSend={sendChatPrompt}
                 onImages={handleChatImages}

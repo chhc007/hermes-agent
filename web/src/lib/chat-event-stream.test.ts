@@ -21,7 +21,13 @@ function reduce(events: Array<[string, unknown?]>) {
 }
 
 function init(messages: ChatEventStreamState["messages"] = []): ChatEventStreamState {
-  return { messages, connectionState: "open", error: null, sessionTitle: null };
+  return {
+    messages,
+    connectionState: "open",
+    error: null,
+    sessionTitle: null,
+    clarify: null,
+  };
 }
 
 describe("parseEventFrame", () => {
@@ -296,5 +302,48 @@ describe("sessionMessagesToChatMessages", () => {
     });
     expect(state.messages).toHaveLength(1);
     expect(state.messages[0]!.text).toBe("old");
+  });
+});
+
+describe("clarify.request", () => {
+  it("stores a single-select clarify request", () => {
+    const state = reduce([["clarify.request", { request_id: "r1", question: "Pick one", choices: ["a", "b", "c"] }]]);
+    expect(state.clarify).toEqual({
+      requestId: "r1",
+      question: "Pick one",
+      choices: ["a", "b", "c"],
+      multiSelect: false,
+    });
+  });
+
+  it("stores a multi-select clarify request when flagged", () => {
+    const state = reduce([["clarify.request", { request_id: "r2", question: "Pick many", choices: ["x", "y"], multi_select: true }]]);
+    expect(state.clarify!.multiSelect).toBe(true);
+  });
+
+  it("supports open-ended clarifies with no choices", () => {
+    const state = reduce([["clarify.request", { request_id: "r3", question: "Type freely", choices: null }]]);
+    expect(state.clarify).toEqual({
+      requestId: "r3",
+      question: "Type freely",
+      choices: null,
+      multiSelect: false,
+    });
+  });
+
+  it("ignores malformed clarify frames", () => {
+    const state = reduce([["clarify.request", { choices: ["a"] }]]);
+    expect(state.clarify).toBeNull();
+  });
+
+  it("clarify_answered clears the pending card", () => {
+    const withCard = chatEventStreamReducer(createInitialState(), {
+      type: "event",
+      eventType: "clarify.request",
+      payload: { request_id: "r1", question: "q", choices: ["a"] },
+    });
+    expect(withCard.clarify).not.toBeNull();
+    const cleared = chatEventStreamReducer(withCard, { type: "clarify_answered" });
+    expect(cleared.clarify).toBeNull();
   });
 });
