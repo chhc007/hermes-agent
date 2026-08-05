@@ -6,6 +6,7 @@ import {
   chatEventStreamReducer,
   createInitialState,
   parseEventFrame,
+  sessionMessagesToChatMessages,
   type ChatEventStreamState,
   type ToolStatus,
 } from "./chat-event-stream";
@@ -247,5 +248,53 @@ describe("message.complete replaces (no duplication)", () => {
       ["message.complete", { text: "" }],
     ]);
     expect(state.messages[0]!.text).toBe("streamed body");
+  });
+});
+
+describe("sessionMessagesToChatMessages", () => {
+  it("maps stored user/assistant messages with tool calls", () => {
+    const messages = sessionMessagesToChatMessages([
+      { role: "user", content: "hello", timestamp: 1 },
+      {
+        role: "assistant",
+        content: "let me look",
+        timestamp: 2,
+        tool_calls: [
+          { id: "tc1", function: { name: "read_file", arguments: '{"path":"a.txt"}' } },
+        ],
+      },
+      { role: "assistant", content: "done", timestamp: 3 },
+    ]);
+    expect(messages).toHaveLength(3);
+    expect(messages[0]!.role).toBe("user");
+    expect(messages[0]!.text).toBe("hello");
+    expect(messages[1]!.role).toBe("assistant");
+    expect(messages[1]!.tools).toHaveLength(1);
+    expect(messages[1]!.tools![0]!.name).toBe("read_file");
+    expect(messages[1]!.tools![0]!.status).toBe("complete");
+    expect(messages[2]!.text).toBe("done");
+  });
+
+  it("drops blank user content and folds tool-only messages into assistant cards", () => {
+    const messages = sessionMessagesToChatMessages([
+      { role: "user", content: "   ", timestamp: 1 },
+      { role: "tool", content: "result", timestamp: 2 },
+      { role: "assistant", content: null, timestamp: 3 },
+    ]);
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.role).toBe("assistant");
+    expect(messages[0]!.text).toBeUndefined();
+    expect(messages[0]!.tools).toBeUndefined();
+  });
+
+  it("history action replaces the message list", () => {
+    const state = chatEventStreamReducer(createInitialState(), {
+      type: "history",
+      messages: sessionMessagesToChatMessages([
+        { role: "user", content: "old", timestamp: 1 },
+      ]),
+    });
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]!.text).toBe("old");
   });
 });

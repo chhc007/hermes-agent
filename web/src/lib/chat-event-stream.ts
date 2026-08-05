@@ -62,7 +62,8 @@ export interface ChatEventStreamState {
 export type ChatEventStreamAction =
   | { type: "event"; eventType: string; payload: unknown }
   | { type: "connection"; connectionState: ConnectionState; error?: string | null }
-  | { type: "user_message"; text: string };
+  | { type: "user_message"; text: string }
+  | { type: "history"; messages: ChatMessage[] };
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -168,6 +169,13 @@ export function chatEventStreamReducer(
         { id: nextId(), role: "user", text, status: "complete", ts: Date.now() },
       ],
     };
+  }
+
+  // Replace the whole list with loaded session history (e.g. when a resumed
+  // chat mounts). Kept as a distinct action so live events that arrive after
+  // the fetch don't get clobbered by a later resolve.
+  if (action.type === "history") {
+    return { ...state, messages: action.messages };
   }
 
   const { eventType, payload } = action;
@@ -385,6 +393,65 @@ export function buildEventFrame(type: string, payload?: unknown): string {
   });
 }
 
+/**
+ * Convert stored session messages (GET /api/sessions/{id}/messages) into
+ * ChatMessage[]. Duck-typed so this stays a pure node-testable function:
+ * accepts the same shape as api.SessionMessage without importing the
+ * browser-bound api module.
+ */
+export function sessionMessagesToChatMessages(
+  messages: Array<{
+    role?: unknown;
+    content?: unknown;
+    timestamp?: unknown;
+    tool_calls?: unknown;
+    tool_name?: unknown;
+  }>,
+): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  for (const m of messages) {
+    // Tool result frames carry no standalone chat value in this view — the
+    // call (name/args) already lives on the assistant message's tool_cards.
+    if (m.role === "tool") continue;
+    const role = m.role === "user" ? "user" : m.role === "system" ? "system" : "assistant";
+    const text = typeof m.content === "string" ? m.content : undefined;
+    const ts = typeof m.timestamp === "number" ? m.timestamp : Date.now();
+    if (role === "user") {
+      if (!text?.trim()) continue;
+      out.push({ id: nextId(), role, text, status: "complete", ts });
+      continue;
+    }
+    if (role === "system") {
+      if (!text?.trim()) continue;
+      out.push({ id: nextId(), role, text, status: "complete", ts });
+      continue;
+    }
+    // Assistant: fold tool_calls into tool cards; keep body text when present.
+    const tools: ToolCallInfo[] = Array.isArray(m.tool_calls)
+      ? (m.tool_calls as Array<Record<string, unknown>>)
+          .filter((tc) => tc && typeof tc === "object")
+          .map((tc, i) => {
+            const fn = tc.function as Record<string, unknown> | undefined;
+            return {
+              tool_id: String(tc.id ?? `hist-${i}`),
+              name: String(fn?.name ?? "tool"),
+              args_text: typeof fn?.arguments === "string" ? truncateArgs(fn.arguments) : undefined,
+              status: "complete" as const,
+            };
+          })
+      : [];
+    out.push({
+      id: nextId(),
+      role,
+      text: text?.trim() || undefined,
+      tools: tools.length ? tools : undefined,
+      status: "complete",
+      ts,
+    });
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------------ */
 /*  React hook: useChatEventStream(channelId)                          */
 /* ------------------------------------------------------------------ */
@@ -410,6 +477,11 @@ export function useChatEventStream(channel: string) {
   // submit() deps don't churn.
   const sendUserMessage = useCallback((text: string) => {
     dispatch({ type: "user_message", text });
+  }, []);
+
+  // Replace the list with loaded session history (resumed chat mount).
+  const loadHistory = useCallback((messages: ChatMessage[]) => {
+    dispatch({ type: "history", messages });
   }, []);
 
   useEffect(() => {
@@ -474,5 +546,5 @@ export function useChatEventStream(channel: string) {
     };
   }, [channel]);
 
-  return { ...state, sendUserMessage };
+  return { ...state, sendUserMessage, loadHistory };
 }

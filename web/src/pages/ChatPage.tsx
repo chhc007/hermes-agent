@@ -34,7 +34,10 @@ import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
 import { ChatInput } from "@/components/ChatInput";
 import { ChatMessageList } from "@/components/ChatMessageList";
-import { useChatEventStream } from "@/lib/chat-event-stream";
+import {
+  sessionMessagesToChatMessages,
+  useChatEventStream,
+} from "@/lib/chat-event-stream";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
@@ -339,6 +342,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // flowing regardless of which view is selected.
   const [activeView, setActiveView] = useState<"chat" | "terminal">("chat");
   const chatStream = useChatEventStream(channel);
+  // Stable refs so effects/callbacks don't have to track the whole
+  // (per-render) chatStream object — sendUserMessage/loadHistory are stable.
+  const sendUserMessageRef = useRef(chatStream.sendUserMessage);
+  const loadHistoryRef = useRef(chatStream.loadHistory);
+  useEffect(() => {
+    sendUserMessageRef.current = chatStream.sendUserMessage;
+    loadHistoryRef.current = chatStream.loadHistory;
+  }, [chatStream.sendUserMessage, chatStream.loadHistory]);
   const handleSessionTitleChange = useCallback(
     (title: string | null) => setSessionTitleState({ scope: titleScope, title }),
     [titleScope],
@@ -373,6 +384,28 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       cancelled = true;
     };
   }, [resumeParam, scopedProfile, handleSessionTitleChange]);
+
+  // Load stored history for a resumed session so the chat view isn't blank
+  // until the live PTY stream produces its first message.
+  useEffect(() => {
+    if (!resumeParam) return;
+
+    let cancelled = false;
+
+    api
+      .getSessionMessages(resumeParam, scopedProfile)
+      .then((res) => {
+        if (cancelled) return;
+        loadHistoryRef.current(sessionMessagesToChatMessages(res.messages));
+      })
+      .catch(() => {
+        // Best-effort: history may be unavailable for old sessions.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resumeParam, scopedProfile]);
 
   useEffect(() => {
     if (!resumeParam) return;
@@ -501,10 +534,10 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       }, 100);
       // Locally-optimistic user bubble: the /api/events feed carries no
       // user-input frames, so the composer appends its own message.
-      chatStream.sendUserMessage(text);
+      sendUserMessageRef.current(text);
       return true;
     },
-    [chatStream.sendUserMessage],
+    [],
   );
 
   // Route image files from the chat composer through the same upload→/image

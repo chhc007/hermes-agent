@@ -78,12 +78,14 @@ vi.mock("@/components/ChatSessionList", () => ({
   ChatSessionList: () => null,
 }));
 vi.mock("@/lib/chat-event-stream", () => ({
+  sessionMessagesToChatMessages: (msgs: unknown[]) => msgs as never,
   useChatEventStream: () => ({
     messages: [],
     connectionState: "connecting",
     error: null,
     sessionTitle: null,
     sendUserMessage: vi.fn(),
+    loadHistory: vi.fn(),
   }),
 }));
 vi.mock("@/components/Backdrop", () => ({ Backdrop: () => null }));
