@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from "react";
+import { act, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
@@ -118,5 +118,53 @@ describe("ChatInput", () => {
     await setValue("nope");
     await act(async () => sendButton().click());
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("reports composer changes via onInputChange", async () => {
+    const onInputChange = vi.fn();
+    await render(<ChatInput onSend={vi.fn()} onInputChange={onInputChange} />);
+    await setValue("/new");
+    expect(onInputChange).toHaveBeenCalledWith("/new");
+  });
+
+  it("lets the completion handler consume keys before submit", async () => {
+    const onSend = vi.fn();
+    const onCompletionKey = vi.fn((e: ReactKeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        return true;
+      }
+      return false;
+    });
+    await render(
+      <ChatInput onSend={onSend} onCompletionKey={onCompletionKey} />,
+    );
+    await setValue("/new");
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    await act(async () => {
+      textarea.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Enter",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    });
+    expect(onCompletionKey).toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("exposes setValue through the imperative handle", async () => {
+    const onInputChange = vi.fn();
+    let handle: { setValue: (v: string) => void } | null = null;
+    const ref = (h: unknown) => {
+      handle = h as { setValue: (v: string) => void };
+    };
+    await render(<ChatInput onSend={vi.fn()} onInputChange={onInputChange} ref={ref} />);
+    await act(async () => {
+      handle!.setValue("/copy");
+    });
+    expect((container.querySelector("textarea") as HTMLTextAreaElement).value).toBe("/copy");
+    expect(onInputChange).toHaveBeenCalledWith("/copy");
   });
 });

@@ -117,6 +117,17 @@ vi.mock("@/i18n", () => ({
 vi.mock("@/lib/dashboard-auth-reload", () => ({
   maybeReloadForLoopbackWsAuthFailure,
 }));
+vi.mock("@/lib/gatewayClient", () => ({
+  GatewayClient: class {
+    connect() {
+      return Promise.resolve();
+    }
+    close() {}
+    request() {
+      return Promise.resolve(null);
+    }
+  },
+}));
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];

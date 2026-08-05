@@ -26,15 +26,25 @@ import { Button } from "@nous-research/ui/ui/components/button";
 import { Typography } from "@nous-research/ui/ui/components/typography/index";
 import { cn } from "@/lib/utils";
 import { Copy, PanelRight, RotateCcw, X } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router";
 
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
-import { ChatInput } from "@/components/ChatInput";
+import { ChatInput, type ChatInputHandle } from "@/components/ChatInput";
 import { ChatMessageList } from "@/components/ChatMessageList";
 import { ClarifyCard } from "@/components/ClarifyCard";
+import { SlashPopover, type SlashPopoverHandle } from "@/components/SlashPopover";
+import { GatewayClient } from "@/lib/gatewayClient";
 import {
   sessionMessagesToChatMessages,
   useChatEventStream,
@@ -353,6 +363,41 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     loadHistoryRef.current = chatStream.loadHistory;
     respondClarifyRef.current = chatStream.respondClarify;
   }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify]);
+
+  // Slash-command completion: the composer text flows up to the popover via
+  // onInputChange, and keys are forwarded through onCompletionKey. The
+  // GatewayClient is shared with nothing else — clarify.respond mints its own.
+  const [composerText, setComposerText] = useState("");
+  const slashPopoverRef = useRef<SlashPopoverHandle | null>(null);
+  const chatInputRef = useRef<ChatInputHandle | null>(null);
+  const completionGw = useMemo(() => new GatewayClient(), []);
+  useEffect(() => {
+    // SlashPopover issues `complete.slash` RPCs through this client; a
+    // GatewayClient must be connected before request() can send anything.
+    // Failure degrades silently — the composer still works, completion just
+    // stays empty (no popover).
+    completionGw
+      .connect()
+      .catch(() => {
+        /* completion unavailable — chat still works */
+      });
+    return () => {
+      completionGw.close();
+    };
+  }, [completionGw]);
+  const handleCompletionKey = useCallback(
+    (e: KeyboardEvent<HTMLTextAreaElement>) =>
+      slashPopoverRef.current?.handleKey(e) ?? false,
+    [],
+  );
+  const handleApplyCompletion = useCallback((nextInput: string) => {
+    setComposerText(nextInput);
+    // Push the completion replacement into the textarea via the imperative
+    // handle (the composer is internally stateful), then refocus so the
+    // user can keep typing.
+    chatInputRef.current?.setValue(nextInput);
+    requestAnimationFrame(() => chatInputRef.current?.focus());
+  }, []);
   const handleSessionTitleChange = useCallback(
     (title: string | null) => setSessionTitleState({ scope: titleScope, title }),
     [titleScope],
@@ -445,7 +490,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
 
   useEffect(() => {
     if (!mobilePanelOpen) return;
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key === "Escape") closeMobilePanel();
     };
     document.addEventListener("keydown", onKey);
@@ -1668,11 +1713,22 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                   }
                 />
               )}
-              <ChatInput
-                onSend={sendChatPrompt}
-                onImages={handleChatImages}
-                disabled={ptyState !== "open"}
-              />
+              <div className="relative">
+                <SlashPopover
+                  ref={slashPopoverRef}
+                  input={composerText}
+                  gw={completionGw}
+                  onApply={handleApplyCompletion}
+                />
+                <ChatInput
+                  ref={chatInputRef}
+                  onSend={sendChatPrompt}
+                  onImages={handleChatImages}
+                  onInputChange={setComposerText}
+                  onCompletionKey={handleCompletionKey}
+                  disabled={ptyState !== "open"}
+                />
+              </div>
             </div>
           )}
 
