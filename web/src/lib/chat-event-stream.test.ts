@@ -347,3 +347,39 @@ describe("clarify.request", () => {
     expect(cleared.clarify).toBeNull();
   });
 });
+
+describe("reset (fresh chat / channel change)", () => {
+  it("clears messages, sessionTitle, and clarify from a populated state", () => {
+    const populated = reduce([
+      ["session.info", { title: "Old session" }],
+      ["message.start", {}],
+      ["message.delta", { text: "old answer" }],
+      ["message.complete", { text: "" }],
+      ["clarify.request", { request_id: "r1", question: "q", choices: ["a", "b"] }],
+    ]);
+    expect(populated.messages.length).toBeGreaterThan(0);
+    expect(populated.sessionTitle).toBe("Old session");
+    expect(populated.clarify).not.toBeNull();
+
+    const reset = chatEventStreamReducer(populated, { type: "reset" });
+    expect(reset.messages).toEqual([]);
+    expect(reset.sessionTitle).toBeNull();
+    expect(reset.clarify).toBeNull();
+    expect(reset.error).toBeNull();
+  });
+
+  it("resets connection state to connecting", () => {
+    const open = chatEventStreamReducer(createInitialState(), {
+      type: "connection",
+      connectionState: "open",
+    });
+    expect(open.connectionState).toBe("open");
+    const reset = chatEventStreamReducer(open, { type: "reset" });
+    expect(reset.connectionState).toBe("connecting");
+  });
+
+  it("reset is safe on an empty initial state", () => {
+    const reset = chatEventStreamReducer(createInitialState(), { type: "reset" });
+    expect(reset).toEqual(createInitialState());
+  });
+});

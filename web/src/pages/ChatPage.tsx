@@ -241,6 +241,11 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const reconnectAttemptRef = useRef(0);
   const forceFreshPtyRef = useRef(false);
   const blockedInputNoticeRef = useRef(false);
+  // Mirrors the chat event stream's stable resetChat callback (assigned in
+  // the ref-sync effect below). Declared up here so startFreshPty /
+  // startFreshDashboardChat — which live above the chatStream definition —
+  // can clear stale bubbles without a TDZ/lint violation.
+  const resetChatRef = useRef<(() => void) | null>(null);
   const lastResumeReconnectAtRef = useRef(0);
   // True from the moment the connect effect begins until the socket resolves
   // (open or close). Guards the page-resume reconnect against firing during
@@ -297,6 +302,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     setLastCloseCode(null);
     setPtyState("connecting");
     setReconnectNonce((n) => n + 1);
+    resetChatRef.current?.();
   }, [clearReconnectTimer]);
   const startFreshDashboardChat = useCallback(() => {
     const next = new URLSearchParams(searchParams);
@@ -313,6 +319,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     setLastCloseCode(null);
     setPtyState("connecting");
     setReconnectNonce((n) => n + 1);
+    resetChatRef.current?.();
   }, [clearReconnectTimer, searchParams, setSearchParams]);
   // Raw state for the mobile side-sheet + a derived value that force-
   // closes whenever the chat tab isn't active.  The *derived* value is
@@ -392,7 +399,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     sendUserMessageRef.current = chatStream.sendUserMessage;
     loadHistoryRef.current = chatStream.loadHistory;
     respondClarifyRef.current = chatStream.respondClarify;
-  }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify]);
+    resetChatRef.current = chatStream.resetChat;
+  }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify, chatStream.resetChat]);
 
   // Slash-command completion: the composer text flows up to the popover via
   // onInputChange, and keys are forwarded through onCompletionKey. The

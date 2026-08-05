@@ -69,6 +69,7 @@ export interface ChatEventStreamState {
 }
 
 export type ChatEventStreamAction =
+  | { type: "reset" }
   | { type: "event"; eventType: string; payload: unknown }
   | { type: "connection"; connectionState: ConnectionState; error?: string | null }
   | { type: "user_message"; text: string }
@@ -164,6 +165,10 @@ export function chatEventStreamReducer(
   state: ChatEventStreamState,
   action: ChatEventStreamAction,
 ): ChatEventStreamState {
+  if (action.type === "reset") {
+    return createInitialState();
+  }
+
   if (action.type === "connection") {
     return {
       ...state,
@@ -551,12 +556,25 @@ export function useChatEventStream(channel: string) {
     [],
   );
 
+  // Reset the chat bubble list + transient state (used when starting a fresh
+  // chat or when the channel changes). Any channel change clears stale
+  // messages before the new socket begins feeding events.
+  const resetChat = useCallback(() => {
+    dispatch({ type: "reset" });
+  }, []);
+
   useEffect(() => {
     if (!channel) return;
     let disposed = false;
     let ws: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
+
+    // Any channel change starts from a clean slate: clear stale messages so
+    // a freshly spawned PTY doesn't render the previous session's bubbles.
+    // Safe for resume flows — history loading (loadHistory) is async and
+    // replaces the list afterward.
+    dispatch({ type: "reset" });
 
     // Establish (or re-establish) the events WebSocket. Deferred dynamic
     // import keeps the browser bindings out of the node reducer's unit tests
@@ -626,5 +644,5 @@ export function useChatEventStream(channel: string) {
     };
   }, [channel]);
 
-  return { ...state, sendUserMessage, loadHistory, respondClarify };
+  return { ...state, sendUserMessage, loadHistory, respondClarify, resetChat };
 }
