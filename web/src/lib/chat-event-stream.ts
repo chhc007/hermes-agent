@@ -558,53 +558,66 @@ export function useChatEventStream(channel: string) {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let attempt = 0;
 
-    // Deferred dynamic import keeps the browser bindings out of the node
-    // reducer's unit tests and mirrors ChatSidebar's lazy WS wiring.
-    import("@/lib/api")
-      .then(({ buildWsUrl }) => {
-        void buildWsUrl("/api/events", { channel })
-          .then((url) => {
-            if (disposed) return;
-            ws = new WebSocket(url);
-            ws.addEventListener("open", () => {
-              attempt = 0;
-              dispatch({ type: "connection", connectionState: "open" });
-            });
-            ws.addEventListener("message", (ev) => {
-              const frame = parseEventFrame(String(ev.data));
-              if (frame) {
-                dispatch({ type: "event", eventType: frame.type, payload: frame.payload });
-              }
-            });
-            ws.addEventListener("error", () => {
-              if (!disposed) dispatch({ type: "connection", connectionState: "error", error: "Events feed disconnected" });
-            });
-            ws.addEventListener("close", (ev) => {
+    // Establish (or re-establish) the events WebSocket. Deferred dynamic
+    // import keeps the browser bindings out of the node reducer's unit tests
+    // and mirrors ChatSidebar's lazy WS wiring.
+    const openSocket = () => {
+      if (disposed) return;
+      // Deferred dynamic import keeps the browser bindings out of the node
+      // reducer's unit tests and mirrors ChatSidebar's lazy WS wiring.
+      import("@/lib/api")
+        .then(({ buildWsUrl }) => {
+          void buildWsUrl("/api/events", { channel })
+            .then((url) => {
               if (disposed) return;
-              if (ev.code === 4401 || ev.code === 4403) {
-                dispatch({ type: "connection", connectionState: "closed", error: `Events feed rejected (${ev.code})` });
-                return;
-              }
-              attempt += 1;
-              const delay = Math.min(250 * 2 ** Math.min(attempt - 1, 5), 5000);
-              reconnectTimer = setTimeout(() => {
-                reconnectTimer = null;
-                ws?.close();
+              const socket = new WebSocket(url);
+              ws = socket;
+              socket.addEventListener("open", () => {
+                attempt = 0;
+                dispatch({ type: "connection", connectionState: "open" });
+              });
+              socket.addEventListener("message", (ev) => {
+                const frame = parseEventFrame(String(ev.data));
+                if (frame) {
+                  dispatch({ type: "event", eventType: frame.type, payload: frame.payload });
+                }
+              });
+              socket.addEventListener("error", () => {
+                if (!disposed) {
+                  dispatch({ type: "connection", connectionState: "error", error: "Events feed disconnected" });
+                }
+              });
+              socket.addEventListener("close", (ev) => {
+                if (disposed) return;
+                if (ev.code === 4401 || ev.code === 4403) {
+                  dispatch({ type: "connection", connectionState: "closed", error: `Events feed rejected (${ev.code})` });
+                  return;
+                }
+                attempt += 1;
                 dispatch({ type: "connection", connectionState: "connecting" });
-              }, delay);
+                const delay = Math.min(250 * 2 ** Math.min(attempt - 1, 5), 5000);
+                reconnectTimer = setTimeout(() => {
+                  reconnectTimer = null;
+                  // Re-open the socket — this is the actual reconnect; the
+                  // old socket is already closed at this point.
+                  openSocket();
+                }, delay);
+              });
+            })
+            .catch(() => {
+              if (!disposed) {
+                dispatch({ type: "connection", connectionState: "error", error: "Failed to open events feed" });
+              }
             });
-          })
-          .catch(() => {
-            if (!disposed) {
-              dispatch({ type: "connection", connectionState: "error", error: "Failed to open events feed" });
-            }
-          });
-      })
-      .catch(() => {
-        if (!disposed) {
-          dispatch({ type: "connection", connectionState: "error", error: "Failed to open events feed" });
-        }
-      });
+        })
+        .catch(() => {
+          if (!disposed) {
+            dispatch({ type: "connection", connectionState: "error", error: "Failed to open events feed" });
+          }
+        });
+    };
+
+    openSocket();
 
     return () => {
       disposed = true;

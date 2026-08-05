@@ -117,14 +117,38 @@ function ptyAttachToken(rotate = false): string {
 // (subscriber).  Generated once per mount so a tab refresh starts a fresh
 // channel — the previous PTY child terminates with the old WS, and its
 // channel auto-evicts when no subscribers remain.
+//
+// Keep-alive mode (attach token present): the channel must be STABLE across
+// refresh, because the registry reuses the same live PTY process (it keeps
+// publishing to the channel it was spawned with). A random per-mount channel
+// would leave the refreshed page subscribed to a channel nobody publishes on
+// — the chat bubble goes silent while xterm (socket-direct) keeps working.
+// The attach token (persisted in localStorage, rotated on force-fresh) gives
+// exactly that stability: same browser -> same channel, new session -> new
+// channel. Fall back to a random channel only when no scope is supplied.
 function generateChannelId(scope?: string): string {
   const prefix = scope ? "chat" : "chat-fresh";
+  if (scope) {
+    return `${prefix}-${stableChannelSuffix(scope)}`;
+  }
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return `${prefix}-${crypto.randomUUID()}`;
   }
   return `${prefix}-${Math.random().toString(36).slice(2)}-${Date.now().toString(
     36,
   )}`;
+}
+
+// Deterministic 32-bit FNV-1a hash rendered as hex — turns the attach-token
+// scope into a stable channel suffix without embedding the raw token in the
+// URL (it's a fan-out key, not a secret, but keeping it opaque is cheap).
+function stableChannelSuffix(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16);
 }
 
 // Colors for the terminal body.  Matches the dashboard's dark teal canvas
@@ -339,8 +363,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // management profile. Changing it remounts the terminal (key below /
   // effect dep) so the user explicitly starts a fresh scoped session.
   const { profile: scopedProfile } = useProfileScope();
+  // Channel must be STABLE across refresh when the PTY is keep-alive:
+  // the registry reuses the live process (which keeps publishing to the
+  // channel it spawned with), so the subscribing side must join the same
+  // channel. The attach token is persisted in localStorage and only
+  // rotated on an explicit force-fresh, which makes it the right scope
+  // seed — same browser, same channel; new session, new channel.
   const channel = useMemo(
-    () => generateChannelId(`${resumeParam ?? ""}\0${scopedProfile}`),
+    () => generateChannelId(`${resumeParam ?? ""}\0${scopedProfile}\0${ptyAttachToken(false)}`),
     [resumeParam, scopedProfile],
   );
   const titleScope = `${channel}\0${reconnectNonce}`;
