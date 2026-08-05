@@ -8,7 +8,7 @@
  */
 
 import { ChevronRight, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import type { ChatMessage } from "@/lib/chat-event-stream";
 import { cn } from "@/lib/utils";
@@ -16,7 +16,11 @@ import { cn } from "@/lib/utils";
 import { Markdown } from "./Markdown";
 import { ToolCallBlock } from "./ToolCallBlock";
 
-export function MessageBubble({ message }: { message: ChatMessage }) {
+export const MessageBubble = memo(function MessageBubble({
+  message,
+}: {
+  message: ChatMessage;
+}) {
   if (message.role === "system") {
     return (
       <div className="flex justify-center">
@@ -38,7 +42,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   }
 
   return <AssistantBubble message={message} />;
-}
+});
 
 function AssistantBubble({ message }: { message: ChatMessage }) {
   const [showThinking, setShowThinking] = useState(Boolean(message.thinking));
@@ -89,8 +93,15 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
 
-        {hasBody && (
-          <Markdown content={message.text ?? ""} streaming={streaming} />
+        {hasBody && streaming && (
+          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
+            {message.text}
+            <StreamingCaret />
+          </div>
+        )}
+
+        {hasBody && !streaming && (
+          <Markdown content={message.text ?? ""} />
         )}
 
         {!hasBody && !hasTools && !hasThinking && streaming && (
@@ -105,5 +116,14 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
         )}
       </div>
     </div>
+  );
+}
+
+function StreamingCaret() {
+  return (
+    <span
+      aria-hidden
+      className="inline-block h-[1em] w-[0.5em] animate-pulse align-[-0.15em] bg-foreground/50"
+    />
   );
 }
