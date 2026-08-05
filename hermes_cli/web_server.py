@@ -2028,11 +2028,12 @@ def _media_serve_roots() -> list[Path]:
 
 @app.get("/api/media")
 async def get_media(path: str):
-    """Return a gateway-local image file as a base64 data URL.
+    """Return a gateway-local image file as raw image bytes.
 
     Lets remote clients (the desktop app over the network, or the web dashboard
     in a browser) display images the agent wrote to *this* machine's filesystem
-    — they can't read the gateway's local disk directly.
+    — they can't read the gateway's local disk directly. Returns the raw file
+    with the correct media type so it can be used directly as an <img> src.
 
     Auth-gated by the session token like every other /api route. Restricted to
     an image-extension allowlist and a size cap so it can't be used to read
@@ -2053,8 +2054,12 @@ async def get_media(path: str):
     if target.stat().st_size > _MEDIA_MAX_BYTES:
         raise HTTPException(status_code=413, detail="File too large")
 
-    encoded = base64.b64encode(target.read_bytes()).decode("ascii")
-    return {"data_url": f"data:{_MEDIA_CONTENT_TYPES[target.suffix.lower()]};base64,{encoded}"}
+    data = target.read_bytes()
+    return Response(
+        content=data,
+        media_type=_MEDIA_CONTENT_TYPES[target.suffix.lower()],
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 def _canonical_path(path: Path, *, require_exists: bool = False) -> Path:
