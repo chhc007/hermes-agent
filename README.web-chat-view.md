@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.1-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.1">
+  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.2.1-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.2.1">
   <img src="https://img.shields.io/badge/状态-稳定-green?style=for-the-badge" alt="Status: stable">
-  <img src="https://img.shields.io/badge/测试-226%20passed-22c55e?style=for-the-badge" alt="Tests: 226 passed">
-  <img src="https://img.shields.io/badge/后端-137%20passed-22c55e?style=for-the-badge" alt="Backend tests: 137 passed">
+  <img src="https://img.shields.io/badge/测试-278%20passed-22c55e?style=for-the-badge" alt="Tests: 278 passed">
+  <img src="https://img.shields.io/badge/后端-479%20passed-22c55e?style=for-the-badge" alt="Backend tests: 479 passed">
 </p>
 
 # 💬 Hermes Web 气泡对话视图（v1）
@@ -32,6 +32,8 @@
 | 🎚️ **自动滚动开关** | 右下角悬浮按钮；上滚/触摸**立即脱离**跟随，滚回底部恢复 |
 | 🧩 **有序片段展示** | thinking/工具调用/答复按**到达顺序**流式显示（终端式时间线），非固定三块 |
 | 🤏 **thinking 折叠预览** | 思考块默认收起，只显示最新几行预览；点开看完整内容 |
+| 🏷️ **终端命令徽标** | slash 补全列表中需要 TUI 交互的命令（`/memory`、`/skills` 等）标注「终端」徽标 |
+| 💡 **终端命令提示** | 在聊天框发送终端专属命令时，追加本地提示气泡（命令仍会转发到终端执行） |
 
 ---
 
@@ -187,6 +189,7 @@ reducer 收到 `thinking.delta` / `message.delta` 时**追加到最后一个同�
 | action | 用途 |
 |--------|------|
 | `user_message` | 发送成功后本地添加用户气泡（事件流里没有用户输入帧） |
+| `system_message` | 本地提示气泡（如终端专属命令已转发、请到 Terminal 查看） |
 | `history` | 替换为加载的会话历史 |
 | `clarify_answered` | 提交答案后清除选项卡片 |
 
@@ -196,12 +199,14 @@ reducer 收到 `thinking.delta` / `message.delta` 时**追加到最后一个同�
 web/src/lib/chat-event-stream.ts      # 核心：reducer 状态机 + useChatEventStream hook
 web/src/lib/media.ts                  # 媒体路径 → /api/media URL 工具
 web/src/components/ChatMessageList.tsx # 消息列表（自动滚动开关 + wheel/触摸立即脱离）
-web/src/components/MessageBubble.tsx   # 消息气泡（segments 顺序渲染 + thinking 折叠预览）
+web/src/components/MessageBubble.tsx   # 消息气泡（segments 顺序渲染 + thinking 折叠预览固定高度）
 web/src/components/ToolCallBlock.tsx   # 工具调用卡片（纯 CSS 状态徽标）
 web/src/components/ClarifyCard.tsx     # 选项卡片（单选/多选/Other）
 web/src/components/MediaImage.tsx      # 图片卡片 + 点击放大 lightbox
 web/src/components/Markdown.tsx        # 轻量 Markdown（表格 + MEDIA: 行）
 web/src/components/ChatInput.tsx       # 输入框（多行/图片/发送）
+web/src/components/SlashPopover.tsx    # slash 补全（Tab/Enter 选中，终端命令徽标）
+web/src/lib/terminal-commands.ts       # 终端专属命令清单（徽标 + 提示的单一事实源）
 web/src/pages/ChatPage.tsx             # Chat/Terminal 视图切换 + PTY 连接
 hermes_cli/web_server.py               # 后端（仅 /api/media 放宽为任意目录 + 64MB）
 ```
@@ -251,7 +256,9 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.2**（当前，稳定）：v1.1 + 有序片段（segments 时间线）+ thinking 折叠预览
+- **v1.2.1**（当前，稳定）：v1.2 + thinking 折叠预览固定高度（防闪）+ 终端命令徽标/提示
+  （`terminal-commands.ts` 单一事实源；chat 发送终端专属命令时本地提示气泡；命令仍转发终端）
+- **v1.2**：v1.1 + 有序片段（segments 时间线）+ thinking 折叠预览
   + 表格解析修复 + 移动端键盘适配
 - **v1.1**：气泡对话 + 工具卡片 + 选项卡片 + 表格 + 图片 + 历史加载
   + 自动滚动开关；流式渲染性能修复（纯文本流式 + 完成后格式化）
