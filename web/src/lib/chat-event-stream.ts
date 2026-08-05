@@ -18,7 +18,7 @@
  *     "params": { "type": "...", "payload": { ... } } }
  */
 
-import { useEffect, useReducer } from "react";
+import { useCallback, useEffect, useReducer } from "react";
 
 /* ------------------------------------------------------------------ */
 /*  Public types                                                       */
@@ -61,7 +61,8 @@ export interface ChatEventStreamState {
 
 export type ChatEventStreamAction =
   | { type: "event"; eventType: string; payload: unknown }
-  | { type: "connection"; connectionState: ConnectionState; error?: string | null };
+  | { type: "connection"; connectionState: ConnectionState; error?: string | null }
+  | { type: "user_message"; text: string };
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -154,6 +155,21 @@ export function chatEventStreamReducer(
     };
   }
 
+  // Locally-optimistic user message: /api/events carries no user-input
+  // frames (the TUI appends user prompts locally), so the composer adds
+  // its own bubble when a send is accepted.
+  if (action.type === "user_message") {
+    const text = asString(action.text);
+    if (!text) return state;
+    return {
+      ...state,
+      messages: [
+        ...state.messages,
+        { id: nextId(), role: "user", text, status: "complete", ts: Date.now() },
+      ],
+    };
+  }
+
   const { eventType, payload } = action;
   const p = (payload ?? {}) as Record<string, unknown>;
   const idx = lastAssistantIndex(state);
@@ -191,7 +207,13 @@ export function chatEventStreamReducer(
             if (i !== idx) {
               return m.status === "streaming" ? { ...m, status: "complete" as const } : m;
             }
-            const body = `${m.text ?? ""}${finalText}`.trim();
+            // The complete frame's `text` is the FULL final response (the
+            // official TUI strips streamed prefixes via finalTail before
+            // appending), so replace the accumulated delta body instead of
+            // concatenating — appending would duplicate everything streamed
+            // so far. Same for reasoning: prefer the delta-thinking already
+            // shown, else the complete frame's reasoning field.
+            const body = finalText || (m.text ?? "").trim();
             return {
               ...m,
               text: body,
@@ -383,6 +405,13 @@ export function useChatEventStream(channel: string) {
     sessionTitle: null,
   }));
 
+  // Composer hook: locally append the user's own bubble (the /api/events
+  // feed carries no user-input frames). Stable identity so ChatInput's
+  // submit() deps don't churn.
+  const sendUserMessage = useCallback((text: string) => {
+    dispatch({ type: "user_message", text });
+  }, []);
+
   useEffect(() => {
     if (!channel) return;
     let disposed = false;
@@ -445,5 +474,5 @@ export function useChatEventStream(channel: string) {
     };
   }, [channel]);
 
-  return state;
+  return { ...state, sendUserMessage };
 }

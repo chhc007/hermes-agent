@@ -488,18 +488,24 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // as handleCopyLast, whose timing comment documents the 100ms window).
   // Returns false when the socket isn't open, so the UI can surface a
   // "not connected" state.
-  const sendChatPrompt = useCallback((text: string) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-      return false;
-    }
-    ws.send(text);
-    window.setTimeout(() => {
-      const s = wsRef.current;
-      if (s && s.readyState === WebSocket.OPEN) s.send("\r");
-    }, 100);
-    return true;
-  }, []);
+  const sendChatPrompt = useCallback(
+    (text: string) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+      ws.send(text);
+      window.setTimeout(() => {
+        const s = wsRef.current;
+        if (s && s.readyState === WebSocket.OPEN) s.send("\r");
+      }, 100);
+      // Locally-optimistic user bubble: the /api/events feed carries no
+      // user-input frames, so the composer appends its own message.
+      chatStream.sendUserMessage(text);
+      return true;
+    },
+    [chatStream.sendUserMessage],
+  );
 
   // Route image files from the chat composer through the same upload→/image
   // attach pipeline the xterm paste/drop path uses.

@@ -203,3 +203,49 @@ describe("ignored / unit events", () => {
     expect(state.messages).toEqual([]);
   });
 });
+
+describe("user_message (local composer bubble)", () => {
+  it("appends a user bubble when the composer sends", () => {
+    // user_message is a standalone action, not an event frame — dispatch it
+    // directly (the hook's sendUserMessage does the same).
+    const state = chatEventStreamReducer(createInitialState(), {
+      type: "user_message",
+      text: "hi hermes",
+    });
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]!.role).toBe("user");
+    expect(state.messages[0]!.text).toBe("hi hermes");
+    expect(state.messages[0]!.status).toBe("complete");
+  });
+
+  it("rejects blank user messages", () => {
+    const state = chatEventStreamReducer(createInitialState(), {
+      type: "user_message",
+      text: "   ",
+    });
+    expect(state.messages).toEqual([]);
+  });
+});
+
+describe("message.complete replaces (no duplication)", () => {
+  it("does not duplicate streamed deltas when complete carries the full text", () => {
+    // Official semantics: message.complete.text is the FULL final response.
+    // The reducer must replace the accumulated delta body, not append.
+    const state = reduce([
+      ["message.start", {}],
+      ["message.delta", { text: "The answer" }],
+      ["message.delta", { text: " is 42." }],
+      ["message.complete", { text: "The answer is 42." }],
+    ]);
+    expect(state.messages[0]!.text).toBe("The answer is 42.");
+  });
+
+  it("keeps streamed deltas when complete carries no text", () => {
+    const state = reduce([
+      ["message.start", {}],
+      ["message.delta", { text: "streamed body" }],
+      ["message.complete", { text: "" }],
+    ]);
+    expect(state.messages[0]!.text).toBe("streamed body");
+  });
+});
