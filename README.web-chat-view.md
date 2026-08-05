@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1">
+  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.1-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.1">
   <img src="https://img.shields.io/badge/状态-稳定-green?style=for-the-badge" alt="Status: stable">
   <img src="https://img.shields.io/badge/测试-226%20passed-22c55e?style=for-the-badge" alt="Tests: 226 passed">
   <img src="https://img.shields.io/badge/后端-137%20passed-22c55e?style=for-the-badge" alt="Backend tests: 137 passed">
@@ -29,6 +29,7 @@
 | 🖼️ **图片展示** | agent 输出的 `MEDIA:/path` 或 Markdown 图片 → 点击放大（手机友好 lightbox） |
 | 🎯 **交互式选项卡片** | 单选 / 多选 / Other 自由输入，经 JSON-RPC 直接应答 |
 | 📱 **手机适配** | 响应式布局，触屏放大预览，输入框多行 + 图片粘贴 |
+| 🎚️ **自动滚动开关** | 右下角悬浮按钮；上滚/触摸**立即脱离**跟随，滚回底部恢复 |
 
 ---
 
@@ -93,6 +94,33 @@ hermes dashboard --host 0.0.0.0 --port 9119
    v1 直接消费官方已有的结构化事件通道。
 2. **零后端协议改动。** 所有能力都建立在官方 `/api/events`、`/api/pty`、`/api/ws`、`/api/media` 之上。
 3. **PTY 持续运行。** 气泡视图只是对同一 PTY 会话的结构化呈现；切回 Terminal 一切照旧。
+4. **流式期间纯文本渲染，回复结束后才格式化 markdown。**（关键性能决策，见下节）
+   流式期间**绝不**渲染结构化 markdown DOM——无论全量解析还是增量解析，持续重建
+   代码块/表格 DOM 都会让主线程过载，长输出必卡死（多轮对照实验验证）。
+
+### 流式渲染性能决策记录（2026-08-05 实测结论）
+
+> 这段是给后续维护者的**血泪教训**，改渲染策略前必读。
+
+| 尝试过的方案 | 结果 | 原因 |
+|-------------|------|------|
+| 每次 delta 全量 `parseBlocks` | ❌ 卡死 | O(n²) 解析 + 全量 DOM 重建 |
+| 流式期间纯文本（当前方案） | ✅ **稳定** | 每次只更新一个文本节点 |
+| 增量块解析器（G 方案） | ❌ 卡死 | 解析快了，但**渲染仍全量重建 markdown DOM** |
+| 隐藏 xterm 门控 | ⚠️ 部分有效 | 减少一个 CPU 大户，但非根治 |
+| 历史消息窗口化（只渲染 30 条） | ❌ 仍卡 | 当前消息的 DOM 增长才是主因 |
+| WS delta 合并调度（16ms/100ms） | ❌ 仍卡 | 把风暴变持续 60fps/10fps 渲染，仍过载 |
+
+**结论**：流式期间渲染**任何**结构化 markdown DOM（代码块/表格/列表）都会让主线程过载。
+唯一稳定方案是**流式期间纯文本（单文本节点）+ `message.complete` 后一次性格式化**。
+
+**实施要点**（当前代码）：
+- `MessageBubble.tsx`：`streaming` 时渲染 `whitespace-pre-wrap` 纯文本 div + 闪烁光标；
+  `complete` 后才用 `<Markdown>` 渲染
+- `MessageBubble` 包 `React.memo`：历史消息引用不变时跳过重渲染
+- `ChatMessageList.tsx`：自动滚动开关 + wheel/触摸**立即脱离**跟随（不等 120px 阈值，
+  否则流式持续拉回让用户永远无法上翻）；外层容器必须 `flex flex-col`（否则 flex-1 失效，
+  气泡溢出到输入框下面——已两次踩坑）
 
 ### 数据流
 
@@ -149,7 +177,7 @@ web reducer 必须**替换**累积的 delta 而不是拼接（否则重复渲染
 ```
 web/src/lib/chat-event-stream.ts      # 核心：reducer 状态机 + useChatEventStream hook
 web/src/lib/media.ts                  # 媒体路径 → /api/media URL 工具
-web/src/components/ChatMessageList.tsx # 消息列表（自动滚底）
+web/src/components/ChatMessageList.tsx # 消息列表（自动滚动开关 + wheel/触摸立即脱离）
 web/src/components/MessageBubble.tsx   # 消息气泡（thinking 折叠 + 正文 Markdown）
 web/src/components/ToolCallBlock.tsx   # 工具调用卡片（纯 CSS 状态徽标）
 web/src/components/ClarifyCard.tsx     # 选项卡片（单选/多选/Other）
@@ -172,6 +200,9 @@ hermes_cli/web_server.py               # 后端（仅 /api/media 放宽为任意
 - `/api/media` 只服务图片扩展名；agent 写非图片附件（pdf 等）不会显示（可后续扩展）
 - `message.delta` 流式渲染期间若刷新页面，历史重新从 `/api/sessions/{id}/messages` 加载
 - clarify 提交走独立的 GatewayClient（/api/ws），与 PTY 连接相互独立
+- **流式期间显示纯文本**（无 markdown 格式），`message.complete` 后才格式化——这是稳定性
+  的代价，属有意设计（见「流式渲染性能决策记录」）。流式时最后一行（无换行）可能延迟
+  到行完结才完整显示。
 
 ---
 
@@ -198,7 +229,10 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.0**（当前）：气泡对话 + 工具卡片 + 选项卡片 + 表格 + 图片 + 历史加载
+- **v1.1**（当前，稳定）：气泡对话 + 工具卡片 + 选项卡片 + 表格 + 图片 + 历史加载
+  + 自动滚动开关；流式渲染性能修复（纯文本流式 + 完成后格式化）
+- **v1.0**：气泡对话 + 工具卡片 + 选项卡片 + 表格 + 图片 + 历史加载（流式期间全量 markdown，
+  长输出卡死，已修复）
 - v0（已废弃）：基于终端文本解析的自定义，混乱且脆弱，已弃用
 
 ## 📄 License
