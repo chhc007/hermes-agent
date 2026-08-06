@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter, useSearchParams } from "react-router";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router";
+import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/i18n", () => ({
   useI18n: () => ({
@@ -55,17 +55,6 @@ function makeSession(overrides: Record<string, unknown> = {}) {
 }
 
 describe("ChatSessionList", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(async () => {
-    // Unmount so document-level listeners (visibilitychange, intervals)
-    // from one test don't leak into the next.
-    await act(async () => root?.unmount());
-    container?.remove();
-  });
-
   it("renders source badges for known sources", async () => {
     vi.mocked(api.getSessions).mockResolvedValue({
       sessions: [
@@ -124,79 +113,5 @@ describe("ChatSessionList", () => {
       ["cli", "All"].includes(b.textContent?.trim() ?? ""),
     );
     expect(chips.length).toBe(0);
-  });
-
-  it("refetches immediately when the ?resume param changes", async () => {
-    vi.mocked(api.getSessions).mockResolvedValue({
-      sessions: [makeSession({ id: "s1" })],
-    } as never);
-    // Harness that flips the resume param, simulating a pick / new chat
-    // landing from outside the list.
-    function ResumeChanger() {
-      const [, setSearchParams] = useSearchParams();
-      return (
-        <button type="button" onClick={() => setSearchParams({ resume: "s2" })}>
-          switch
-        </button>
-      );
-    }
-    await render(
-      <MemoryRouter initialEntries={["/chat?resume=s1"]}>
-        <ResumeChanger />
-        <ChatSessionList activeSessionId={null} />
-      </MemoryRouter>,
-    );
-    // Mount only: the resume effect must not double-fetch on first run.
-    expect(api.getSessions).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      const btn = Array.from(container.querySelectorAll("button")).find((b) =>
-        b.textContent?.includes("switch"),
-      )!;
-      btn.click();
-    });
-    expect(api.getSessions).toHaveBeenCalledTimes(2);
-  });
-
-  it("polls silently every 30 seconds", async () => {
-    vi.useFakeTimers();
-    try {
-      vi.mocked(api.getSessions).mockResolvedValue({
-        sessions: [makeSession({ id: "s1" })],
-      } as never);
-      await render(
-        <MemoryRouter>
-          <ChatSessionList activeSessionId={null} />
-        </MemoryRouter>,
-      );
-      expect(api.getSessions).toHaveBeenCalledTimes(1);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(30000);
-      });
-      expect(api.getSessions).toHaveBeenCalledTimes(2);
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(30000);
-      });
-      expect(api.getSessions).toHaveBeenCalledTimes(3);
-    } finally {
-      await act(async () => root?.unmount());
-      vi.useRealTimers();
-    }
-  });
-
-  it("refetches silently when the tab becomes visible", async () => {
-    vi.mocked(api.getSessions).mockResolvedValue({
-      sessions: [makeSession({ id: "s1" })],
-    } as never);
-    await render(
-      <MemoryRouter>
-        <ChatSessionList activeSessionId={null} />
-      </MemoryRouter>,
-    );
-    expect(api.getSessions).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      document.dispatchEvent(new Event("visibilitychange"));
-    });
-    // jsdom's default visibilityState is "visible" → silent refetch.
-    expect(api.getSessions).toHaveBeenCalledTimes(2);
   });
 });

@@ -87,8 +87,7 @@ export function ChatSessionList({
   onNewChat,
 }: ChatSessionListProps) {
   const { t } = useI18n();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const resumeId = searchParams.get("resume");
+  const [, setSearchParams] = useSearchParams();
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,34 +106,24 @@ export function ChatSessionList({
   // stale list out of order.
   const reqRef = useRef(0);
 
-  const load = useCallback(
-    (opts?: { silent?: boolean }) => {
-      const myReq = ++reqRef.current;
-      // Silent mode (polling / visibility resume) only swaps the data in —
-      // no loading/error churn so the list never flickers.
-      if (!opts?.silent) {
-        setLoading(true);
-        setError(null);
-      }
-      api
-        .getSessions(SESSION_LIMIT, 0, scopeKey, "recent")
-        .then((res) => {
-          if (reqRef.current !== myReq) return;
-          setSessions(res.sessions);
-        })
-        .catch((e: Error) => {
-          if (reqRef.current !== myReq) return;
-          if (!opts?.silent) setError(e.message || "failed to load sessions");
-        })
-        .finally(() => {
-          // Symmetric with the silent guard above: a silent refresh never
-          // clears a loading state it didn't set (and can't clobber one a
-          // concurrent visible load is showing).
-          if (reqRef.current === myReq && !opts?.silent) setLoading(false);
-        });
-    },
-    [scopeKey],
-  );
+  const load = useCallback(() => {
+    const myReq = ++reqRef.current;
+    setLoading(true);
+    setError(null);
+    api
+      .getSessions(SESSION_LIMIT, 0, scopeKey, "recent")
+      .then((res) => {
+        if (reqRef.current !== myReq) return;
+        setSessions(res.sessions);
+      })
+      .catch((e: Error) => {
+        if (reqRef.current !== myReq) return;
+        setError(e.message || "failed to load sessions");
+      })
+      .finally(() => {
+        if (reqRef.current === myReq) setLoading(false);
+      });
+  }, [scopeKey]);
 
   useEffect(() => {
     // Dashboard data surfaces fetch from an effect on mount + scope change;
@@ -144,39 +133,6 @@ export function ChatSessionList({
     load();
     // `reloadNonce` is a manual refetch trigger (Refresh button / row pick).
   }, [load, reloadNonce]);
-
-  // Refresh immediately when the `?resume` target changes (a session was
-  // picked here, or a new one was started elsewhere). Skipped on first
-  // mount — the mount effect above already loaded.
-  const prevResumeRef = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    if (prevResumeRef.current === undefined) {
-      prevResumeRef.current = resumeId; // first run: mount effect handles it
-      return;
-    }
-    if (prevResumeRef.current !== resumeId) {
-      prevResumeRef.current = resumeId;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      load();
-    }
-  }, [resumeId, load]);
-
-  // Silent polling: new conversations (New chat, Telegram, …) show up
-  // without a manual refresh, with no loading/error flicker.
-  useEffect(() => {
-    const id = setInterval(() => load({ silent: true }), 30000);
-    return () => clearInterval(id);
-  }, [load]);
-
-  // Refetch quietly when the tab becomes visible again — the list may have
-  // drifted while the user was elsewhere.
-  useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === "visible") load({ silent: true });
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [load]);
 
   const reload = useCallback(() => setReloadNonce((n) => n + 1), []);
 
