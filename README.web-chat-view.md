@@ -317,6 +317,18 @@ npm run build --workspace web
 
 ---
 
+## 📌 待办（Backlog）
+
+- **管理页面汉化（暂缓，用户决定先保持现状，2026-08-06）**
+  - 范围：登录页整页（SIGN IN / USERNAME / PASSWORD 等硬编码）+ 主导航侧边栏
+    6 项硬编码英文（Files / MCP / Channels / Webhooks / Pairing / System）+
+    管理页面（System/Mcp/Webhooks/Channels 等）约 159 处次要硬编码文案。
+  - 背景：v1.4 只汉化了 Chat 核心组件（chat 命名空间）；管理侧与登录页仍走
+    硬编码英文，未接 i18n。
+  - 用户决定：先保持现状，不做此项；后续要做时从本条目继续。
+
+---
+
 ## 📦 版本
 
 - **v1.4**（当前，稳定）：**完整汉化** — zh 翻译补全（63 key）、默认语言中文（浏览器
