@@ -141,6 +141,11 @@ export const tr: Translations = {
     startConversation: "Burada görmek için bir konuşma başlatın",
     noMessages: "Mesaj yok",
     untitledSession: "Başlıksız oturum",
+    activeBadge: "active",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "Oturumu sil",
     confirmDeleteTitle: "Oturum silinsin mi?",
     confirmDeleteMessage:
@@ -173,6 +178,19 @@ export const tr: Translations = {
       system: "Sistem",
       tool: "Araç",
     },
+  },
+
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
   },
 
   analytics: {

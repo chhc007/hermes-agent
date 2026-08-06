@@ -141,6 +141,11 @@ export const pt: Translations = {
     startConversation: "Inicie uma conversa para a ver aqui",
     noMessages: "Sem mensagens",
     untitledSession: "Sessão sem título",
+    activeBadge: "active",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "Eliminar sessão",
     confirmDeleteTitle: "Eliminar sessão?",
     confirmDeleteMessage:
@@ -173,6 +178,19 @@ export const pt: Translations = {
       system: "Sistema",
       tool: "Ferramenta",
     },
+  },
+
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
   },
 
   analytics: {

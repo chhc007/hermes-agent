@@ -139,6 +139,11 @@ export const ar = defineLocale({
     startConversation: "ابدأ محادثة لتظهر هنا",
     noMessages: "لا توجد رسائل",
     untitledSession: "جلسة بدون عنوان",
+    activeBadge: "active",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "حذف الجلسة",
     confirmDeleteTitle: "حذف الجلسة؟",
     confirmDeleteMessage:
@@ -154,6 +159,19 @@ export const ar = defineLocale({
       system: "النظام",
       tool: "أداة",
     },
+  },
+
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
   },
 
   analytics: {

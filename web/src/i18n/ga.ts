@@ -141,6 +141,11 @@ export const ga: Translations = {
     startConversation: "Tosaigh comhrá chun é a fheiceáil anseo",
     noMessages: "Gan teachtaireachtaí",
     untitledSession: "Seisiún gan teideal",
+    activeBadge: "active",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "Scrios an seisiún",
     confirmDeleteTitle: "Scrios an seisiún?",
     confirmDeleteMessage:
@@ -173,6 +178,19 @@ export const ga: Translations = {
       system: "Córas",
       tool: "Uirlis",
     },
+  },
+
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
   },
 
   analytics: {

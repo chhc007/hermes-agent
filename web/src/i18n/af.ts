@@ -141,6 +141,11 @@ export const af: Translations = {
     startConversation: "Begin 'n gesprek om dit hier te sien",
     noMessages: "Geen boodskappe",
     untitledSession: "Sessie sonder titel",
+    activeBadge: "active",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "Skrap sessie",
     confirmDeleteTitle: "Skrap sessie?",
     confirmDeleteMessage:
@@ -173,6 +178,19 @@ export const af: Translations = {
       system: "Stelsel",
       tool: "Gereedskap",
     },
+  },
+
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
   },
 
   analytics: {

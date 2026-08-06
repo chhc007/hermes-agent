@@ -141,6 +141,11 @@ export const ja: Translations = {
     startConversation: "会話を開始するとここに表示されます",
     noMessages: "メッセージがありません",
     untitledSession: "無題のセッション",
+    activeBadge: "active",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "セッションを削除",
     confirmDeleteTitle: "セッションを削除しますか？",
     confirmDeleteMessage:
@@ -173,6 +178,19 @@ export const ja: Translations = {
       system: "システム",
       tool: "ツール",
     },
+  },
+
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
   },
 
   analytics: {

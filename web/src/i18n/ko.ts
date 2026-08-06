@@ -141,6 +141,11 @@ export const ko: Translations = {
     startConversation: "대화를 시작하면 여기에 표시됩니다",
     noMessages: "메시지가 없습니다",
     untitledSession: "제목 없는 세션",
+    activeBadge: "active",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "세션 삭제",
     confirmDeleteTitle: "세션을 삭제하시겠습니까?",
     confirmDeleteMessage:
@@ -173,6 +178,19 @@ export const ko: Translations = {
       system: "시스템",
       tool: "도구",
     },
+  },
+
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
   },
 
   analytics: {

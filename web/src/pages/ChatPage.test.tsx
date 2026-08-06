@@ -115,6 +115,18 @@ vi.mock("@/i18n", () => ({
         modelToolsSheetSubtitle: "Tools",
         modelToolsSheetTitle: "Model",
       },
+      chat: {
+        attachImage: "Attach image",
+        inputPlaceholder: "Message hermes…",
+        collapseInput: "Collapse input",
+        expandInput: "Expand input",
+        sendMessage: "Send message",
+        toggleAutoScroll: "Toggle auto scroll",
+        streaming: "streaming",
+        answerPlaceholder: "Type your answer…",
+        mediaPreview: "media preview",
+        closePreview: "Close preview",
+      },
     },
   }),
 }));

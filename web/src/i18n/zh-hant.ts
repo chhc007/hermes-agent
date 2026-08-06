@@ -141,6 +141,11 @@ export const zhHant: Translations = {
     startConversation: "開始對話後將顯示於此",
     noMessages: "尚無訊息",
     untitledSession: "未命名工作階段",
+    activeBadge: "active",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "刪除工作階段",
     confirmDeleteTitle: "刪除工作階段？",
     confirmDeleteMessage:
@@ -173,6 +178,19 @@ export const zhHant: Translations = {
       system: "系統",
       tool: "工具",
     },
+  },
+
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
   },
 
   analytics: {

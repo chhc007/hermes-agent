@@ -33,7 +33,6 @@ export const MessageBubble = memo(function MessageBubble({
 }: {
   message: ChatMessage;
 }) {
-  const { t } = useI18n();
   if (message.role === "system") {
     return (
       <div className="flex justify-center">

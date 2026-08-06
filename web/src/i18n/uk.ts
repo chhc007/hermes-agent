@@ -141,6 +141,11 @@ export const uk: Translations = {
     startConversation: "Почніть розмову, щоб побачити її тут",
     noMessages: "Немає повідомлень",
     untitledSession: "Сесія без назви",
+    activeBadge: "active",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "Видалити сесію",
     confirmDeleteTitle: "Видалити сесію?",
     confirmDeleteMessage:
@@ -173,6 +178,19 @@ export const uk: Translations = {
       system: "Система",
       tool: "Інструмент",
     },
+  },
+
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
   },
 
   analytics: {
