@@ -1520,13 +1520,49 @@ def write_json(obj: dict) -> bool:
        :func:`dispatch` for the lifetime of a request).
     3. Otherwise the module-level stdio transport, matching the historical
        behaviour and keeping tests that monkey-patch ``_real_stdout`` green.
+
+    Detached-session fallback: a session whose transport was re-pointed at the
+    drop sentinel (``_detached_ws_transport`` — e.g. the browser refreshed and
+    its keep-alive PTY connection was reaped) still emits — a delegated
+    subagent keeps running inside the parent turn and its mirror frames
+    (``reasoning.delta`` / ``tool.start`` / …) would otherwise be silently
+    dropped. Those frames fall back to a fan-out over the live transports so
+    the dashboard bubble view keeps streaming instead of going quiet while
+    history (REST) still loads.
     """
     if obj.get("method") == "event":
         sid = ((obj.get("params") or {}).get("session_id")) or ""
         if sid and (t := (_sessions.get(sid) or {}).get("transport")) is not None:
-            return t.write(obj)
+            if t is not _detached_ws_transport:
+                return t.write(obj)
+            return _broadcast_frame_to_live(obj)
 
     return (current_transport() or _stdio_transport).write(obj)
+
+
+def _broadcast_frame_to_live(obj: dict) -> bool:
+    """Best-effort fan of one raw frame to every connected live transport.
+
+    Used by :func:`write_json` when a session's own transport is the drop
+    sentinel but the session keeps emitting (delegated subagent mirrors).
+    No registered transports (stdio TUI, tests) → fall back to stdio.
+    """
+    with _live_transports_lock:
+        targets = list(_live_transports)
+
+    if not targets:
+        return _stdio_transport.write(obj)
+
+    ok = False
+    for transport in targets:
+        try:
+            transport.write(obj)
+            ok = True
+        except Exception:
+            # One wedged peer must not stall the rest; disconnect teardown
+            # unregisters it.
+            logger.debug("live-frame broadcast write failed", exc_info=True)
+    return ok
 
 
 def _event_frame(event: str, sid: str, payload: dict | None = None) -> dict:

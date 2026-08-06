@@ -174,6 +174,80 @@ def test_write_json(capture):
     assert json.loads(buf.getvalue()) == {"test": True}
 
 
+class _FrameSink:
+    """Minimal Transport stub that records every frame it receives."""
+
+    def __init__(self):
+        self.frames: list[dict] = []
+
+    def write(self, obj: dict) -> bool:
+        self.frames.append(obj)
+        return True
+
+
+def test_write_json_detached_session_falls_back_to_live_transports(server):
+    """A session whose transport is the drop sentinel must still surface its
+    event frames via the live transports (subagent mirror case) instead of
+    silently dropping them."""
+    live = _FrameSink()
+    server._live_transports.add(live)
+    try:
+        server._sessions["orphan"] = {
+            "session_key": "orphan",
+            "transport": server._detached_ws_transport,
+        }
+        frame = {
+            "jsonrpc": "2.0",
+            "method": "event",
+            "params": {"type": "reasoning.delta", "session_id": "orphan", "payload": {"text": "x"}},
+        }
+        assert server.write_json(frame) is True
+        assert len(live.frames) == 1
+        assert live.frames[0] == frame
+    finally:
+        server._live_transports.discard(live)
+
+
+def test_write_json_live_session_uses_own_transport_not_broadcast(server):
+    """A session with a healthy transport keeps routing to it only — the
+    detached-session fallback must never double-fan normal events."""
+    session_t = _FrameSink()
+    live = _FrameSink()
+    server._sessions["healthy"] = {
+        "session_key": "healthy",
+        "transport": session_t,
+    }
+    server._live_transports.add(live)
+    try:
+        frame = {
+            "jsonrpc": "2.0",
+            "method": "event",
+            "params": {"type": "message.delta", "session_id": "healthy", "payload": {"text": "hi"}},
+        }
+        assert server.write_json(frame) is True
+        assert len(session_t.frames) == 1
+        assert live.frames == []
+    finally:
+        server._live_transports.discard(live)
+
+
+def test_write_json_detached_session_falls_back_to_stdio_without_live(server, capture):
+    """With no live transports registered, a detached session falls back to
+    stdio (the pre-existing sink) rather than dropping or raising."""
+    server, buf = capture
+    server._sessions["orphan"] = {
+        "session_key": "orphan",
+        "transport": server._detached_ws_transport,
+    }
+    frame = {
+        "jsonrpc": "2.0",
+        "method": "event",
+        "params": {"type": "tool.start", "session_id": "orphan", "payload": {}},
+    }
+    assert server.write_json(frame) is True
+    assert json.loads(buf.getvalue()) == frame
+
+
 def test_disable_flush_env_var_actually_wires_to_module_constant(monkeypatch):
     """End-to-end: setting `HERMES_TUI_GATEWAY_NO_FLUSH=1` and importing
     `tui_gateway.transport` fresh actually flips `_DISABLE_FLUSH` true.
