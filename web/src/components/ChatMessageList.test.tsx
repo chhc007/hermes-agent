@@ -6,6 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/utils", () => ({
   cn: (...args: Array<string | false | null | undefined>) => args.filter(Boolean).join(" "),
 }));
+vi.mock("@/i18n", () => ({
+  useI18n: () => ({
+    t: { chat: { toggleAutoScroll: "Toggle auto scroll" } },
+  }),
+}));
 vi.mock("./MessageBubble", () => ({
   MessageBubble: ({ message }: { message: { id: string } }) => (
     <div data-testid="bubble">{message.id}</div>
@@ -74,7 +79,7 @@ describe("ChatMessageList", () => {
 
     act(() => btn.click());
     expect(toggleButton().getAttribute("aria-pressed")).toBe("false");
-    expect(toggleButton().getAttribute("title")).toBe("自动滚动");
+    expect(toggleButton().getAttribute("title")).toBe("Toggle auto scroll");
 
     act(() => toggleButton().click());
     expect(toggleButton().getAttribute("aria-pressed")).toBe("true");

@@ -190,6 +190,19 @@ export const zh: Translations = {
     },
   },
 
+  chat: {
+    attachImage: "附加图片",
+    inputPlaceholder: "给 hermes 发消息…（Enter 发送，Shift+Enter 换行）",
+    collapseInput: "收起输入框",
+    expandInput: "展开输入框",
+    sendMessage: "发送消息",
+    toggleAutoScroll: "切换自动滚动",
+    streaming: "流式输出中",
+    answerPlaceholder: "输入你的回答…",
+    mediaPreview: "媒体预览",
+    closePreview: "关闭预览",
+  },
+
   analytics: {
     period: "时间范围：",
     totalTokens: "总 Token 数",

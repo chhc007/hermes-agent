@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { mediaUrl } from "@/lib/media";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 interface MediaImageProps {
   src: string; // raw path or URL
@@ -21,6 +22,7 @@ interface MediaImageProps {
 }
 
 export function MediaImage({ src, alt, className }: MediaImageProps) {
+  const { t } = useI18n();
   const url = mediaUrl(src);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -91,12 +93,12 @@ export function MediaImage({ src, alt, className }: MediaImageProps) {
           onClick={() => setZoom(false)}
           role="dialog"
           aria-modal="true"
-          aria-label={alt ?? "media preview"}
+          aria-label={alt ?? t.chat.mediaPreview}
         >
           <button
             type="button"
             onClick={() => setZoom(false)}
-            aria-label="Close preview"
+            aria-label={t.chat.closePreview}
             className="absolute right-3 top-3 z-10 flex size-9 items-center justify-center rounded-full bg-white/10 text-white transition-colors hover:bg-white/20"
           >
             <X className="size-5" />

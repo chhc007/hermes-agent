@@ -14,6 +14,7 @@
 
 import { ChevronRight, Sparkles } from "lucide-react";
 import { memo, useState } from "react";
+import { useI18n } from "@/i18n";
 
 import type {
   ChatMessage,
@@ -32,6 +33,7 @@ export const MessageBubble = memo(function MessageBubble({
 }: {
   message: ChatMessage;
 }) {
+  const { t } = useI18n();
   if (message.role === "system") {
     return (
       <div className="flex justify-center">
@@ -205,6 +207,7 @@ function LegacyBody({
   message: ChatMessage;
   streaming: boolean;
 }) {
+  const { t } = useI18n();
   const hasThinking = Boolean(message.thinking?.trim());
   const hasTools = Boolean(message.tools?.length);
   const hasBody = Boolean(message.text?.trim());
@@ -237,7 +240,7 @@ function LegacyBody({
       {!hasBody && !hasTools && !hasThinking && streaming && (
         <div
           className="mt-1.5 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-[-0.25em]"
-          aria-label="streaming"
+          aria-label={t.chat.streaming}
         />
       )}
 

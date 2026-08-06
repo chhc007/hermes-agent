@@ -210,6 +210,20 @@ export interface Translations {
     };
   };
 
+  // ── Chat / bubbles ──
+  chat: {
+    attachImage: string;
+    inputPlaceholder: string;
+    collapseInput: string;
+    expandInput: string;
+    sendMessage: string;
+    toggleAutoScroll: string;
+    streaming: string;
+    answerPlaceholder: string;
+    mediaPreview: string;
+    closePreview: string;
+  };
+
   // ── Analytics page ──
   analytics: {
     period: string;

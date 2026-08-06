@@ -195,6 +195,20 @@ export const en: Translations = {
     },
   },
 
+  chat: {
+    attachImage: "Attach image",
+    inputPlaceholder:
+      "Message hermes… (Enter to send, Shift+Enter for a new line)",
+    collapseInput: "Collapse input",
+    expandInput: "Expand input",
+    sendMessage: "Send message",
+    toggleAutoScroll: "Toggle auto scroll",
+    streaming: "streaming",
+    answerPlaceholder: "Type your answer…",
+    mediaPreview: "media preview",
+    closePreview: "Close preview",
+  },
+
   analytics: {
     period: "Period:",
     totalTokens: "Total Tokens",

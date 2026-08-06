@@ -28,6 +28,7 @@ import {
   transferMayContainImage,
 } from "@/lib/chatImagePaste";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 interface ChatInputProps {
   /** Returns false when the message was NOT accepted (e.g. PTY not connected). */
@@ -64,6 +65,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     const [expanded, setExpanded] = useState(false);
     const [needsGrow, setNeedsGrow] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    const { t } = useI18n();
 
     // Auto-grow the textarea with content. Line height is ~1.25rem (text-sm
     // leading-relaxed); GROW_LINE_CAP rows ≈ 6 lines before we switch to the
@@ -151,7 +153,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         <label
           htmlFor="chat-input-image"
           className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-secondary/60 hover:text-text-secondary"
-          title="Attach image"
+          title={t.chat.attachImage}
         >
           <ImagePlus className="size-4" />
           <input
@@ -171,7 +173,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           onKeyDown={handleKeyDown}
           disabled={disabled}
           rows={1}
-          placeholder="Message hermes… (Enter to send, Shift+Enter for a new line)"
+          placeholder={t.chat.inputPlaceholder}
           className={cn(
             "min-h-8 flex-1 resize-none overflow-y-auto bg-transparent px-1 py-1.5",
             "text-sm leading-relaxed text-foreground outline-none",
@@ -183,8 +185,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           <button
             type="button"
             onClick={() => setExpanded((e) => !e)}
-            aria-label={expanded ? "Collapse input" : "Expand input"}
-            title={expanded ? "Collapse input" : "Expand input"}
+            aria-label={expanded ? t.chat.collapseInput : t.chat.expandInput}
+            title={expanded ? t.chat.collapseInput : t.chat.expandInput}
             className="flex size-8 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-secondary/60 hover:text-text-secondary"
           >
             {expanded ? (
@@ -199,7 +201,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           type="button"
           onClick={submit}
           disabled={disabled || !value.trim()}
-          aria-label="Send message"
+          aria-label={t.chat.sendMessage}
           className={cn(
             "flex size-8 shrink-0 items-center justify-center rounded-md transition-colors",
             "bg-primary text-primary-foreground",

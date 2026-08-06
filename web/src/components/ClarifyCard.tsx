@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 
 import type { ClarifyRequest } from "@/lib/chat-event-stream";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 interface ClarifyCardProps {
   clarify: ClarifyRequest;
@@ -17,6 +18,7 @@ interface ClarifyCardProps {
 }
 
 export function ClarifyCard({ clarify, onAnswer }: ClarifyCardProps) {
+  const { t } = useI18n();
   const choices = clarify.choices ?? [];
   const multi = clarify.multiSelect && choices.length > 1;
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -122,7 +124,7 @@ export function ClarifyCard({ clarify, onAnswer }: ClarifyCardProps) {
           onKeyDown={(e) => {
             if (e.key === "Enter") void submit();
           }}
-          placeholder="Type your answer…"
+          placeholder={t.chat.answerPlaceholder}
           className="w-full rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-sm text-foreground outline-none placeholder:text-text-tertiary focus:border-primary/60"
         />
       )}

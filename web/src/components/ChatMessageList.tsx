@@ -12,6 +12,7 @@ import { ChevronsDown } from "lucide-react";
 
 import type { ChatMessage } from "@/lib/chat-event-stream";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n";
 
 import { MessageBubble } from "./MessageBubble";
 
@@ -21,6 +22,7 @@ interface ChatMessageListProps {
 }
 
 export function ChatMessageList({ messages, className }: ChatMessageListProps) {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
   const lastCountRef = useRef(0);
@@ -113,9 +115,9 @@ export function ChatMessageList({ messages, className }: ChatMessageListProps) {
         <button
           type="button"
           onClick={toggleAutoScroll}
-          aria-label="Toggle auto scroll"
+          aria-label={t.chat.toggleAutoScroll}
           aria-pressed={autoScrollEnabled}
-          title="自动滚动"
+          title={t.chat.toggleAutoScroll}
           className={cn(
             "absolute bottom-2 right-2 flex size-8 items-center justify-center rounded-full",
             autoScrollEnabled
