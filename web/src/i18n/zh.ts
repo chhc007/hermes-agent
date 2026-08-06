@@ -46,6 +46,8 @@ export const zh: Translations = {
     pluginLoadFailed:
       "无法加载此插件的脚本。请检查网络请求（dashboard-plugins/…）以及服务器上的插件路径。",
     pluginNotRegistered: "插件脚本未调用 register()，或执行出错。请打开浏览器控制台查看详情。",
+    gatewayHint:
+      "消息平台、API 服务器和 webhook 在「渠道」页面配置。这些是网关级设置（代理/中继模式和全局允许列表）。",
   },
 
   app: {
@@ -89,6 +91,9 @@ export const zh: Translations = {
     statusOverview: "状态概览",
     system: "系统",
     webUi: "管理面板",
+    currentProfileOption: "此仪表盘（{name}）",
+    managingProfileBanner:
+      "正在管理配置“{name}”——配置、密钥、技能、MCP、模型和新聊天均应用于该配置。",
   },
 
   status: {
@@ -122,6 +127,13 @@ export const zh: Translations = {
     updateHermes: "更新 Hermes",
     updatingHermes: "正在更新 Hermes…",
     waitingForOutput: "等待输出…",
+    restartGatewayConfirmTitle: "重启网关？",
+    restartGatewayConfirmMessage:
+      "这将重启 Hermes 网关进程。连接中的渠道和活动会话随后会重新连接。",
+    updateHermesConfirmTitle: "更新 Hermes？",
+    updateHermesConfirmMessage:
+      "这将运行 hermes update 并在完成后重启网关。在此之前，活动会话会保留其提示缓存。",
+    updateHermesConfirmNow: "立即更新",
   },
 
   sessions: {
@@ -140,6 +152,11 @@ export const zh: Translations = {
     startConversation: "开始对话后将显示在此处",
     noMessages: "暂无消息",
     untitledSession: "无标题会话",
+    activeBadge: "当前",
+    delegateBadge: "子代理",
+    delegateBadgeTitle: "子代理会话（由其他会话委托生成）",
+    sortRecent: "最近活跃",
+    sortCreated: "创建时间",
     deleteSession: "删除会话",
     confirmDeleteTitle: "删除会话？",
     confirmDeleteMessage: "此操作将永久删除对话及其所有消息，无法恢复。",
@@ -279,6 +296,9 @@ export const zh: Translations = {
       discord: "Discord",
       slack: "Slack",
       email: "邮件",
+      needsHomeChannel: "请先设置主频道",
+      noneConfigured:
+        "未配置消息平台。请在「渠道」下设置一个，以便投递报告。",
     },
   },
 
@@ -312,6 +332,33 @@ export const zh: Translations = {
     created: "已创建",
     deleted: "已删除",
     renamed: "已重命名",
+    activeBadge: "活跃",
+    activeProfile: "活跃配置文件",
+    activeSet: "已设为活跃配置",
+    advancedOptions: "高级选项",
+    aliasBadge: "别名",
+    autoGenerate: "自动生成",
+    cloneAll: "克隆全部（记忆、会话、技能、状态）",
+    describeFailed: "无法生成描述",
+    descriptionOptional: "描述（可选）",
+    descriptionPlaceholder: "此配置擅长什么？用于按角色路由 kanban 任务。",
+    descriptionSaved: "描述已保存",
+    distribution: "分发",
+    editDescription: "编辑描述",
+    editModel: "更换模型",
+    gatewayRunning: "网关运行中",
+    gatewayRunningWarning: "此配置的网关正在运行——将被停止。",
+    gatewayStopped: "网关已停止",
+    generating: "生成中…",
+    modelInherit: "继承自克隆 / 默认",
+    modelLoading: "正在加载模型…",
+    modelNone: "未配置认证的提供方——请先设置密钥",
+    modelOptional: "模型（可选）",
+    modelSaved: "模型已更新",
+    modelSelect: "选择模型",
+    noSkillsOption: "无",
+    reviewBadge: "审核",
+    setActive: "设为活跃",
   },
 
   pluginsPage: {
@@ -372,6 +419,10 @@ export const zh: Translations = {
     setupNeeded: "需要配置",
     disabledForCli: "CLI 已禁用",
     more: "还有 {count} 个",
+    currentProfile: "当前（{name}）",
+    managingProfile:
+      "正在管理配置“{name}”——切换项应用于该配置，而非此仪表盘。",
+    profileSelector: "配置文件",
   },
 
   config: {
@@ -492,6 +543,12 @@ export const zh: Translations = {
   theme: {
     title: "主题",
     switchTheme: "切换主题",
+    fontTitle: "字体",
+    fontDefault: "主题默认",
+    fontDefaultHint: "使用当前主题的字体",
+    fontSans: "无衬线",
+    fontSerif: "衬线",
+    fontMono: "等宽",
   },
 
   achievements: {
@@ -762,5 +819,28 @@ export const zh: Translations = {
       "工作区路径（可选，留空则根据负责人推导）",
     logTruncated: "（显示最后 100 KB — 完整日志位于 ",
     logAt: "）",
+    assigneeLabel: "处理人",
+    assigneeLabelHint: "（留空 = 由调度器选择）",
+    boardSettings: "设置",
+    boardSettingsTitle:
+      "看板设置 — 名称、描述，以及新任务继承的默认项目目录",
+    boardSettingsTitleFor: "看板设置 — {name}",
+    commentHint:
+      "评论会在工作进程下次运行或调用 kanban_show() 时送达——无需先阻塞任务。",
+    commentHintTitle:
+      "评论是与任务工作进程沟通的渠道。它们会立即落到线程上——无需先阻塞任务。运行中的工作进程会在下次 kanban_show() 或重启时拾取线程；阻塞仅用于希望工作进程停止并等待输入的情况。",
+    confirmScheduled:
+      "将此任务移至「已排期」？用于已知的时间延迟，而非人工阻塞。",
+    needsAssignee: "需要处理人",
+    needsAssigneeHint:
+      "依赖已满足，但调度器会跳过此任务，直到你分配一个配置文件。",
+    newTaskTitle: "新任务 — {column}",
+    parentLabel: "父任务",
+    parentLabelHint: "（子任务将保持阻塞，直到父任务完成）",
+    projectDirectoryOverrideHint:
+      "新任务继承此目录作为工作区默认值；每个任务仍可在创建对话框中覆盖。",
+    skillsLabel: "技能",
+    skillsLabelHint: "（可选，逗号分隔）",
+    taskTitleLabel: "标题",
   },
 };

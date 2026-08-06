@@ -295,15 +295,15 @@ export function ChatSessionList({
                 </span>
                 {isActive && (
                   <span className="inline-flex shrink-0 items-center border border-primary/50 bg-primary/10 px-1 py-px text-[0.625rem] leading-none tracking-wide text-primary">
-                    当前
+                    {t.sessions.activeBadge}
                   </span>
                 )}
                 {s.is_delegate && (
                   <span
                     className="inline-flex shrink-0 items-center border border-purple-500/50 bg-purple-500/10 px-1 py-px text-[0.625rem] leading-none tracking-wide text-purple-400"
-                    title="子代理会话（由其他会话委托生成）"
+                    title={t.sessions.delegateBadgeTitle}
                   >
-                    子代理
+                    {t.sessions.delegateBadge}
                   </span>
                 )}
                 <span
@@ -404,8 +404,8 @@ export function ChatSessionList({
       <div className="mb-2 flex items-center gap-1 px-2">
         {(
           [
-            ["recent", "最近活跃"],
-            ["created", "创建时间"],
+            ["recent", t.sessions.sortRecent],
+            ["created", t.sessions.sortCreated],
           ] as const
         ).map(([value, label]) => (
           <button

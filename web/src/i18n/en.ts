@@ -156,6 +156,11 @@ export const en: Translations = {
     startConversation: "Start a conversation to see it here",
     noMessages: "No messages",
     untitledSession: "Untitled session",
+    activeBadge: "current",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Delegated subagent session",
+    sortRecent: "Recent activity",
+    sortCreated: "Creation time",
     deleteSession: "Delete session",
     confirmDeleteTitle: "Delete session?",
     confirmDeleteMessage:

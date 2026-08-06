@@ -174,6 +174,11 @@ export interface Translations {
     startConversation: string;
     noMessages: string;
     untitledSession: string;
+    activeBadge: string;
+    delegateBadge: string;
+    delegateBadgeTitle: string;
+    sortRecent: string;
+    sortCreated: string;
     deleteSession: string;
     confirmDeleteTitle: string;
     confirmDeleteMessage: string;

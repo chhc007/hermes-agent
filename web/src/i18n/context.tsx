@@ -85,7 +85,16 @@ function getInitialLocale(): Locale {
   } catch {
     // SSR or privacy mode
   }
-  return "en";
+  // Chinese-first default for the dashboard: match zh-* browser locales,
+  // fall back to zh for the primary user base. Language switcher still
+  // lets anyone switch back to en (persisted in localStorage).
+  try {
+    const nav = typeof navigator !== "undefined" ? navigator.language : "";
+    if (nav.toLowerCase().startsWith("zh")) return "zh";
+  } catch {
+    // ignore
+  }
+  return "zh";
 }
 
 interface I18nContextValue {
