@@ -1735,7 +1735,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               />
             </div>
             <ChatSessionList
-              activeSessionId={resumeParam}
+              activeSessionId={chatStream.activeSessionId ?? resumeParam}
               profile={scopedProfile}
               onPicked={closeMobilePanel}
               onNewChat={startFreshDashboardChat}

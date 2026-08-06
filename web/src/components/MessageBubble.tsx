@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 
 import { Markdown } from "./Markdown";
 import { ToolCallBlock } from "./ToolCallBlock";
+import { formatTimestamp } from "@/lib/utils";
 
 export const MessageBubble = memo(function MessageBubble({
   message,
@@ -36,6 +37,9 @@ export const MessageBubble = memo(function MessageBubble({
       <div className="flex justify-center">
         <div className="max-w-[80%] rounded-md bg-secondary/40 px-3 py-1.5 text-center text-xs text-text-secondary">
           {message.text}
+          <span className="ml-2 whitespace-nowrap text-[0.625rem] text-text-tertiary/80">
+            {formatTimestamp(message.ts)}
+          </span>
         </div>
       </div>
     );
@@ -46,6 +50,9 @@ export const MessageBubble = memo(function MessageBubble({
       <div className="flex justify-end">
         <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-lg rounded-br-sm bg-primary/10 px-3 py-2 text-sm leading-relaxed text-foreground">
           {message.text}
+          <div className="mt-1 text-right text-[0.625rem] leading-none text-text-tertiary/80">
+            {formatTimestamp(message.ts)}
+          </div>
         </div>
       </div>
     );
@@ -80,21 +87,27 @@ function AssistantBubble({ message }: { message: ChatMessage }) {
 
   if (hasSegments) {
     return (
-      <BodyFrame>
+      <BodyFrame ts={message.ts}>
         <SegmentSequence message={message} streaming={streaming} />
       </BodyFrame>
     );
   }
 
   return (
-    <BodyFrame>
+    <BodyFrame ts={message.ts}>
       <LegacyBody message={message} streaming={streaming} />
     </BodyFrame>
   );
 }
 
 /** Shared shell: agent identity row + the bubble card. */
-function BodyFrame({ children }: { children: React.ReactNode }) {
+function BodyFrame({
+  children,
+  ts,
+}: {
+  children: React.ReactNode;
+  ts?: number;
+}) {
   return (
     <div className="flex flex-col items-start gap-1.5">
       <div className="flex items-center gap-1.5 px-1 text-text-tertiary">
@@ -103,6 +116,9 @@ function BodyFrame({ children }: { children: React.ReactNode }) {
       </div>
       <div className="max-w-[92%] rounded-lg rounded-tl-sm border border-border/70 bg-secondary/20 px-3 py-2">
         {children}
+        <div className="mt-1 text-left text-[0.625rem] leading-none text-text-tertiary/80">
+          {formatTimestamp(ts ?? 0)}
+        </div>
       </div>
     </div>
   );

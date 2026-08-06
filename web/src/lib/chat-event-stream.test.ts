@@ -26,6 +26,7 @@ function init(messages: ChatEventStreamState["messages"] = []): ChatEventStreamS
     connectionState: "open",
     error: null,
     sessionTitle: null,
+    activeSessionId: null,
     clarify: null,
   };
 }
@@ -47,6 +48,13 @@ describe("session.info", () => {
   it("records the title from a session.info frame", () => {
     const state = reduce([["session.info", { title: "My session" }]]);
     expect(state.sessionTitle).toBe("My session");
+  });
+
+  it("records the stored_session_id as the active session id", () => {
+    const state = reduce([
+      ["session.info", { title: "My session", stored_session_id: "20260806_123456_abcd" }],
+    ]);
+    expect(state.activeSessionId).toBe("20260806_123456_abcd");
   });
 });
 

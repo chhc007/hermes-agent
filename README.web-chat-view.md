@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.2.2-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.2.2">
+  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.3-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.3">
   <img src="https://img.shields.io/badge/状态-稳定-green?style=for-the-badge" alt="Status: stable">
   <img src="https://img.shields.io/badge/测试-278%20passed-22c55e?style=for-the-badge" alt="Tests: 278 passed">
   <img src="https://img.shields.io/badge/后端-479%20passed-22c55e?style=for-the-badge" alt="Backend tests: 479 passed">
@@ -36,6 +36,9 @@
 | 💡 **终端命令提示** | 在聊天框发送终端专属命令时，追加本地提示气泡（命令仍会转发到终端执行） |
 | 🔄 **会话列表自动刷新** | 左栏 `ChatSessionList` 三源刷新：`?resume` 参数变化立即刷新、30s 静默轮询、标签页回前台静默刷新（`load({silent})` 不闪 loading） |
 | 🎚️ **PortalSelect 下拉** | 思考程度下拉改用 portal+fixed 定位（`PortalSelect`），不再被 `overflow-y-auto` 容器裁剪，8 个选项完整可滚；位置实时跟随 + 翻转 + 键盘导航 |
+| 🔦 **当前会话高亮** | 会话列表高亮当前激活会话（`session.info` 的 `stored_session_id`，fresh chat 也能识别），带「当前」徽标 + 主题色背景/边框 |
+| 📶 **会话排序切换** | 会话列表支持「最近活跃 / 创建时间」两种排序（后端 `order` 参数已支持，前端切换即时重拉） |
+| 🕐 **消息时间戳** | 每条消息（用户/助手/系统气泡）显示发送时间 `YYYY-MM-DD HH:mm:ss`，兼容秒/毫秒时间戳 |
 
 ---
 
@@ -314,7 +317,10 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.2.2**（当前，稳定）：v1.2.1 + 会话列表自动刷新（resume/30s 轮询/回前台）+ PortalSelect
+- **v1.3**（当前，稳定）：v1.2.2 + 会话列表**当前会话高亮**（`session.info.stored_session_id`，
+  fresh chat 也识别）+ **排序切换**（最近活跃/创建时间）+ **消息时间戳**
+  （`YYYY-MM-DD HH:mm:ss`，用户/助手/系统气泡）
+- **v1.2.2**：v1.2.1 + 会话列表自动刷新（resume/30s 轮询/回前台）+ PortalSelect
   思考下拉（portal 定位防裁剪）+ **气泡事件流修复**：subagent 会话 transport 被 detach 时
   事件不再静默丢弃（`write_json` 回退 live transports 广播，见下方「故障排查」）
 - **v1.2.1**：v1.2 + thinking 折叠预览固定高度（防闪）+ 终端命令徽标/提示

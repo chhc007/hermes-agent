@@ -199,4 +199,42 @@ describe("ChatSessionList", () => {
     // jsdom's default visibilityState is "visible" → silent refetch.
     expect(api.getSessions).toHaveBeenCalledTimes(2);
   });
+
+  it("highlights the active session row with a 当前 marker", async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "a", source: "cli", title: "Active chat" }),
+        makeSession({ id: "b", source: "cli", title: "Other chat" }),
+      ],
+    } as never);
+    await render(
+      <MemoryRouter>
+        <ChatSessionList activeSessionId="a" />
+      </MemoryRouter>,
+    );
+    expect(container.textContent).toContain("当前");
+    // Only one row carries the marker (the matching one).
+    expect(container.querySelectorAll("span").length).toBeGreaterThan(0);
+  });
+
+  it("switches ordering to created and refetches with the new order", async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({
+      sessions: [makeSession({ id: "a" })],
+    } as never);
+    await render(
+      <MemoryRouter>
+        <ChatSessionList activeSessionId={null} />
+      </MemoryRouter>,
+    );
+    // Default order is "recent".
+    expect(vi.mocked(api.getSessions).mock.calls[0][3]).toBe("recent");
+
+    const createdBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.includes("创建时间"),
+    )!;
+    await act(async () => {
+      createdBtn.click();
+    });
+    expect(vi.mocked(api.getSessions).mock.calls[1][3]).toBe("created");
+  });
 });

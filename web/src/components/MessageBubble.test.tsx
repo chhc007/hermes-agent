@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/utils", () => ({
   cn: (...args: Array<string | false | null | undefined>) => args.filter(Boolean).join(" "),
+  formatTimestamp: (ts: number) => (ts > 0 ? `TS-${ts}` : ""),
 }));
 vi.mock("./Markdown", () => ({
   Markdown: ({ content }: { content: string }) => <div data-testid="markdown">{content}</div>,
@@ -229,5 +230,25 @@ describe("MessageBubble segments ordering", () => {
     expect(markdownDivs.some((d) => d.textContent === "legacy body")).toBe(true);
     expect(container.querySelector('[data-testid="tool-call"]')?.textContent).toBe("terminal");
     expect(visibleText()).toContain("legacy thought");
+  });
+
+  it("renders the timestamp for assistant, user and system bubbles", async () => {
+    const assistant: ChatMessage = {
+      id: "a1",
+      role: "assistant",
+      status: "complete",
+      ts: 1723000000,
+      segments: [segments.text("reply")],
+    };
+    await render(<MessageBubble message={assistant} />);
+    expect(visibleText()).toContain("TS-1723000000");
+
+    const user: ChatMessage = { id: "u1", role: "user", status: "complete", ts: 1723000001, text: "hi" };
+    await act(async () => root.render(<MessageBubble message={user} />));
+    expect(visibleText()).toContain("TS-1723000001");
+
+    const system: ChatMessage = { id: "s1", role: "system", status: "complete", ts: 1723000002, text: "note" };
+    await act(async () => root.render(<MessageBubble message={system} />));
+    expect(visibleText()).toContain("TS-1723000002");
   });
 });

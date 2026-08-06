@@ -33,3 +33,18 @@ export function isoTimeAgo(iso: string): string {
   if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
   return `${Math.floor(delta / 86400)}d ago`;
 }
+
+/** Full timestamp as `YYYY-MM-DD HH:mm:ss` (local time). Accepts seconds or
+ *  milliseconds epoch (chat history uses seconds, live frames use ms). */
+export function formatTimestamp(ts: number): string {
+  if (!Number.isFinite(ts) || ts <= 0) return "";
+  // History timestamps are seconds; live reducer uses Date.now() ms.
+  const ms = ts < 1e12 ? ts * 1000 : ts;
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  );
+}

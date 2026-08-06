@@ -96,6 +96,9 @@ export interface ChatEventStreamState {
   connectionState: ConnectionState;
   error: string | null;
   sessionTitle: string | null;
+  /** Current live session id (from `session.info` `stored_session_id`), used
+   *  to highlight the active row in the session list even for fresh chats. */
+  activeSessionId: string | null;
   clarify: ClarifyRequest | null;
 }
 
@@ -225,6 +228,7 @@ export function createInitialState(): ChatEventStreamState {
     connectionState: "connecting",
     error: null,
     sessionTitle: null,
+    activeSessionId: null,
     clarify: null,
   };
 }
@@ -297,6 +301,7 @@ export function chatEventStreamReducer(
       return {
         ...state,
         sessionTitle: asString(p.title) ?? state.sessionTitle,
+        activeSessionId: asString(p.stored_session_id) ?? state.activeSessionId,
       };
 
     case "clarify.request": {
@@ -629,6 +634,7 @@ export function useChatEventStream(channel: string) {
     connectionState: "connecting" as ConnectionState,
     error: null,
     sessionTitle: null,
+    activeSessionId: null,
     clarify: null,
   }));
 

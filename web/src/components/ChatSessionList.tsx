@@ -96,6 +96,8 @@ export function ChatSessionList({
   const [reloadNonce, setReloadNonce] = useState(0);
   // Active source filter (null = all).
   const [sourceFilter, setSourceFilter] = useState<string | null>(null);
+  // List ordering: "recent" = last active first (default), "created" = newest first.
+  const [order, setOrder] = useState<"created" | "recent">("recent");
 
   // `profile` is read inside the fetch; it's part of the scope key so a
   // profile switch refetches. The empty-string fallback keeps the dep
@@ -117,7 +119,7 @@ export function ChatSessionList({
         setError(null);
       }
       api
-        .getSessions(SESSION_LIMIT, 0, scopeKey, "recent")
+        .getSessions(SESSION_LIMIT, 0, scopeKey, order)
         .then((res) => {
           if (reqRef.current !== myReq) return;
           setSessions(res.sessions);
@@ -133,7 +135,7 @@ export function ChatSessionList({
           if (reqRef.current === myReq && !opts?.silent) setLoading(false);
         });
     },
-    [scopeKey],
+    [order, scopeKey],
   );
 
   useEffect(() => {
@@ -278,14 +280,24 @@ export function ChatSessionList({
                 "flex-col items-start gap-0.5 rounded px-2 py-1.5",
                 "normal-case tracking-normal",
                 isActive
-                  ? "bg-primary/10 text-foreground border-l-2 border-primary"
+                  ? "bg-primary/15 text-foreground border-l-[3px] border-primary"
                   : "text-text-secondary hover:bg-midground/5 hover:text-foreground",
               )}
             >
               <span className="flex w-full items-center gap-1.5">
-                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-sm font-medium",
+                    isActive && "text-primary",
+                  )}
+                >
                   {rowLabel(s, t.sessions.untitledSession)}
                 </span>
+                {isActive && (
+                  <span className="inline-flex shrink-0 items-center border border-primary/50 bg-primary/10 px-1 py-px text-[0.625rem] leading-none tracking-wide text-primary">
+                    当前
+                  </span>
+                )}
                 <span
                   className={cn(
                     "inline-flex shrink-0 items-center border px-1 py-px text-[0.625rem] leading-none tracking-wide",
@@ -379,6 +391,31 @@ export function ChatSessionList({
           ))}
         </div>
       )}
+
+      {/* Ordering: recent activity vs creation time */}
+      <div className="mb-2 flex items-center gap-1 px-2">
+        {(
+          [
+            ["recent", "最近活跃"],
+            ["created", "创建时间"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setOrder(value)}
+            aria-pressed={order === value}
+            className={cn(
+              "flex-1 rounded border px-1 py-0.5 text-[0.625rem] tracking-wide transition-colors",
+              order === value
+                ? "border-primary/60 bg-primary/15 text-primary"
+                : "border-border/60 bg-secondary/30 text-text-secondary hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 pb-1">
         {content}
