@@ -113,6 +113,8 @@ export const ar = defineLocale({
     platformError: "خطأ",
     recentSessions: "الجلسات الأخيرة",
     restartGateway: "إعادة تشغيل البوابة",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "إعادة تشغيل البوابة…",
     running: "يعمل",
     runningRemote: "يعمل (عن بعد)",

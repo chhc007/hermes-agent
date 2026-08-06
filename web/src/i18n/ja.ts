@@ -113,6 +113,8 @@ export const ja: Translations = {
     platformError: "エラー",
     recentSessions: "最近のセッション",
     restartGateway: "ゲートウェイを再起動",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "ゲートウェイを再起動しています…",
     running: "実行中",
     runningRemote: "実行中 (リモート)",

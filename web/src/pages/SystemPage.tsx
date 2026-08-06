@@ -41,6 +41,7 @@ import { useToast } from "@nous-research/ui/hooks/use-toast";
 import { useConfirmDelete } from "@nous-research/ui/hooks/use-confirm-delete";
 import { ConfirmDialog } from "@nous-research/ui/ui/components/confirm-dialog";
 import { useModalBehavior } from "@/hooks/useModalBehavior";
+import { useI18n } from "@/i18n";
 import { DeleteConfirmDialog } from "@/components/DeleteConfirmDialog";
 import { HermesConsoleModal } from "@/components/HermesConsoleModal";
 import { cn, themedBody } from "@/lib/utils";
@@ -191,6 +192,7 @@ const MEMORY_STATUS_TONE: Record<
 
 export default function SystemPage() {
   const { toast, showToast } = useToast();
+  const { t } = useI18n();
 
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [stats, setStats] = useState<SystemStats | null>(null);
@@ -251,6 +253,8 @@ export default function SystemPage() {
   );
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateConfirmOpen, setUpdateConfirmOpen] = useState(false);
+  const [dashboardRestartConfirmOpen, setDashboardRestartConfirmOpen] =
+    useState(false);
 
   const loadAll = useCallback(() => {
     Promise.allSettled([
@@ -301,6 +305,20 @@ export default function SystemPage() {
       setTimeout(loadAll, 3000);
     } catch (e) {
       showToast(`Gateway ${verb} failed: ${e}`, "error");
+    }
+  };
+
+  // ── Dashboard lifecycle ────────────────────────────────────────────
+  const runDashboardRestart = async () => {
+    setDashboardRestartConfirmOpen(false);
+    try {
+      await api.restartDashboard();
+      showToast(t.status.restartingDashboard, "success");
+      // The dashboard restarts itself via a detached watcher; give the new
+      // instance time to come up before reloading the page data.
+      setTimeout(loadAll, 5000);
+    } catch (e) {
+      showToast(`Dashboard restart failed: ${e}`, "error");
     }
   };
 
@@ -669,6 +687,19 @@ export default function SystemPage() {
             : `This will run 'hermes update' (${updateInfo?.update_command ?? "hermes update"}) and restart the gateway when it finishes.`
         }
         confirmLabel="Update now"
+      />
+
+      <ConfirmDialog
+        open={dashboardRestartConfirmOpen}
+        onCancel={() => setDashboardRestartConfirmOpen(false)}
+        onConfirm={() => void runDashboardRestart()}
+        title={t.status.restartDashboardConfirmTitle ?? t.status.restartDashboard}
+        description={
+          t.status.restartDashboardConfirmMessage ??
+          "This will restart the Dashboard process. All running TUI/PTY sessions will be interrupted; the page will briefly disconnect and recover automatically."
+        }
+        destructive
+        confirmLabel={t.status.restartDashboard}
       />
 
       <DeleteConfirmDialog
@@ -1078,6 +1109,15 @@ export default function SystemPage() {
                 prefix={<Power className="h-3.5 w-3.5" />}
               >
                 Stop
+              </Button>
+              <Button
+                size="sm"
+                className="uppercase"
+                ghost
+                onClick={() => setDashboardRestartConfirmOpen(true)}
+                prefix={<Server className="h-3.5 w-3.5" />}
+              >
+                {t.status.restartDashboard}
               </Button>
             </div>
           </CardContent>

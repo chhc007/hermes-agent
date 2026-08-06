@@ -113,6 +113,8 @@ export const zhHant: Translations = {
     platformError: "錯誤",
     recentSessions: "近期工作階段",
     restartGateway: "重新啟動閘道",
+    restartDashboard: "重新啟動 Dashboard",
+    restartingDashboard: "正在重新啟動 Dashboard…",
     restartingGateway: "正在重新啟動閘道…",
     running: "執行中",
     runningRemote: "執行中（遠端）",

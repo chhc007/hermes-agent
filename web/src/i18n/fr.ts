@@ -113,6 +113,8 @@ export const fr: Translations = {
     platformError: "erreur",
     recentSessions: "Sessions récentes",
     restartGateway: "Redémarrer la passerelle",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "Redémarrage de la passerelle…",
     running: "En cours",
     runningRemote: "En cours (distant)",

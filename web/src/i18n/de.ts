@@ -113,6 +113,8 @@ export const de: Translations = {
     platformError: "Fehler",
     recentSessions: "Letzte Sitzungen",
     restartGateway: "Gateway neu starten",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "Gateway wird neu gestartet…",
     running: "Läuft",
     runningRemote: "Läuft (remote)",

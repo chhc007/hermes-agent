@@ -113,6 +113,8 @@ export const af: Translations = {
     platformError: "fout",
     recentSessions: "Onlangse Sessies",
     restartGateway: "Herbegin Gateway",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "Besig om gateway te herbegin…",
     running: "Loop",
     runningRemote: "Loop (afgeleë)",

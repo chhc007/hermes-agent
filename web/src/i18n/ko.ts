@@ -113,6 +113,8 @@ export const ko: Translations = {
     platformError: "오류",
     recentSessions: "최근 세션",
     restartGateway: "게이트웨이 재시작",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "게이트웨이 재시작 중…",
     running: "실행 중",
     runningRemote: "실행 중 (원격)",

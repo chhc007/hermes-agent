@@ -125,6 +125,11 @@ export const en: Translations = {
       "This restarts the Hermes gateway process. Connected channels and active sessions will reconnect afterward.",
     restartGatewayConfirmTitle: "Restart gateway?",
     restartingGateway: "Restarting gateway…",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
+    restartDashboardConfirmTitle: "Restart Dashboard?",
+    restartDashboardConfirmMessage:
+      "This restarts the Dashboard process. All running TUI/PTY sessions will be interrupted, and the page will briefly disconnect before recovering automatically. Continue?",
     running: "Running",
     runningRemote: "Running (remote)",
     startFailed: "Start failed",

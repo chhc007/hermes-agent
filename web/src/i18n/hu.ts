@@ -113,6 +113,8 @@ export const hu: Translations = {
     platformError: "hiba",
     recentSessions: "Legutóbbi munkamenetek",
     restartGateway: "Átjáró újraindítása",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "Átjáró újraindítása…",
     running: "Fut",
     runningRemote: "Fut (távoli)",

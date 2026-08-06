@@ -113,6 +113,8 @@ export const uk: Translations = {
     platformError: "помилка",
     recentSessions: "Останні сесії",
     restartGateway: "Перезапустити шлюз",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "Перезапуск шлюзу…",
     running: "Працює",
     runningRemote: "Працює (віддалено)",

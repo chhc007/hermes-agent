@@ -3670,6 +3670,16 @@ async def run_config_migrate():
     return {"ok": True, "pid": proc.pid, "name": "config-migrate"}
 
 
+@app.post("/api/ops/restart-dashboard")
+async def run_restart_dashboard():
+    """Restart the dashboard process itself via a detached restart watcher."""
+    try:
+        proc = _spawn_dashboard_restart()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to restart dashboard: {exc}")
+    return {"ok": True, "pid": proc.pid, "name": "dashboard-restart"}
+
+
 @app.post("/api/ops/debug-share")
 async def run_debug_share_endpoint(body: DebugShareRequest | None = None):
     """Upload a redacted debug report + full logs and return the paste URLs.
@@ -3740,6 +3750,7 @@ _ACTION_LOG_FILES: Dict[str, str] = {
     "dump": "action-dump.log",
     "config-migrate": "action-config-migrate.log",
     "tools-post-setup": "action-tools-post-setup.log",
+    "dashboard-restart": "action-dashboard-restart.log",
 }
 
 # ``name`` → most recently spawned Popen handle.  Used so ``status`` can
@@ -3839,6 +3850,137 @@ def _spawn_hermes_action(
     else:
         _ACTION_IDS.pop(name, None)
     return proc
+
+
+def _dashboard_restart_command() -> List[str]:
+    """Reconstruct the command line used to relaunch the dashboard.
+
+    Prefers deriving from ``sys.argv`` so custom flags (``--host``,
+    ``--port``, ``--profile``, …) survive the restart.  Handles both
+    invocation styles — ``hermes dashboard ...`` (entry point) and
+    ``python -m hermes_cli.main dashboard ...`` — and falls back to the
+    canonical ``hermes dashboard --host 0.0.0.0 --port 9119 --no-open``
+    form when argv is unavailable/unreliable.
+    """
+    rest = [str(arg) for arg in sys.argv[1:]]
+    if rest[:2] == ["-m", "hermes_cli.main"]:
+        # Already invoked as ``python -m hermes_cli.main ...`` — keep argv.
+        cmd = [sys.executable, *rest]
+    elif rest:
+        # Invoked via the ``hermes`` entry point (``hermes dashboard ...``).
+        cmd = [sys.executable, "-m", "hermes_cli.main", *rest]
+    else:
+        cmd = [
+            sys.executable,
+            "-m",
+            "hermes_cli.main",
+            "dashboard",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "9119",
+            "--no-open",
+        ]
+    return cmd
+
+
+def _spawn_dashboard_restart() -> subprocess.Popen:
+    """Spawn a fully detached watcher that restarts the dashboard itself.
+
+    The dashboard cannot kill and respawn itself inline (the HTTP request
+    would never return), so the job is handed to a tiny detached Python
+    watcher that:
+
+      1. sleeps ~2s so the ``ok`` response flushes back to the browser;
+      2. SIGTERMs the old dashboard PID and polls until it exits (releasing
+         the 9119 port), at most ~15s;
+      3. respawns the dashboard with the reconstructed command line,
+         streaming stdout/stderr into ``action-dashboard-restart.log``.
+
+    Returns the watcher's Popen handle so the API can report its pid.
+    """
+    old_pid = os.getpid()
+    cmd = _dashboard_restart_command()
+
+    log_file_name = _ACTION_LOG_FILES["dashboard-restart"]
+    _ACTION_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_path = _ACTION_LOG_DIR / log_file_name
+    log_file = open(log_path, "ab", buffering=0)
+    log_file.write(
+        (
+            f"\n=== dashboard-restart started {time.strftime('%Y-%m-%d %H:%M:%S')} "
+            f"(old pid {old_pid}, cmd {' '.join(cmd)}) ===\n"
+        ).encode()
+    )
+    log_file.close()
+
+    # The dashboard runs inside the gateway process, so os.environ carries
+    # _HERMES_GATEWAY=1. The respawned dashboard must NOT inherit it (it
+    # would trip the in-process restart-loop guard), mirroring
+    # _spawn_hermes_action.
+    action_env = {**os.environ, "HERMES_NONINTERACTIVE": "1"}
+    action_env.pop("_HERMES_GATEWAY", None)
+
+    watcher = (
+        "import os, signal, subprocess, sys, time\n"
+        "try:\n"
+        "    import psutil\n"
+        "except Exception:\n"
+        "    psutil = None\n"
+        "def _pid_exists(pid):\n"
+        "    # Zombie (defunct) processes still answer os.kill(pid, 0) but have\n"
+        "    # already exited and released their port — treat them as gone so\n"
+        "    # the respawn doesn't wait out the full poll.  Mirrors\n"
+        "    # gateway.status._pid_exists.\n"
+        "    if psutil is not None:\n"
+        "        try:\n"
+        "            return psutil.Process(int(pid)).status() != psutil.STATUS_ZOMBIE\n"
+        "        except psutil.NoSuchProcess:\n"
+        "            return False\n"
+        "        except Exception:\n"
+        "            pass\n"
+        "    try:\n"
+        "        os.kill(pid, 0)\n"
+        "        return True\n"
+        "    except OSError:\n"
+        "        return False\n"
+        "old_pid = int(sys.argv[1])\n"
+        "log_path = sys.argv[2]\n"
+        "cmd = sys.argv[3:]\n"
+        "# Give the HTTP response time to flush back to the browser.\n"
+        "time.sleep(2)\n"
+        "try:\n"
+        "    os.kill(old_pid, signal.SIGTERM)\n"
+        "except (ProcessLookupError, PermissionError):\n"
+        "    pass  # already gone or not ours\n"
+        "# Poll until the old dashboard exits (releases the port), max ~15s.\n"
+        "gone = False\n"
+        "deadline = time.monotonic() + 15\n"
+        "while time.monotonic() < deadline:\n"
+        "    if not _pid_exists(old_pid):\n"
+        "        gone = True\n"
+        "        break\n"
+        "    time.sleep(0.25)\n"
+        "# Respawn the dashboard, appending its output to the action log.\n"
+        "with open(log_path, 'ab', buffering=0) as lf:\n"
+        "    lf.write(('\\n=== dashboard respawned %s (old gone=%s) ===\\n' % (time.strftime('%Y-%m-%d %H:%M:%S'), gone)).encode())\n"
+        "    subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=lf, stderr=subprocess.STDOUT, start_new_session=True)\n"
+    )
+
+    watcher_argv = [sys.executable, "-c", watcher, str(old_pid), str(log_path), *cmd]
+
+    popen_kwargs: Dict[str, Any] = {
+        "stdin": subprocess.DEVNULL,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "env": action_env,
+    }
+    if sys.platform == "win32":
+        popen_kwargs["creationflags"] = windows_detach_flags()
+    else:
+        popen_kwargs["start_new_session"] = True
+
+    return subprocess.Popen(watcher_argv, **popen_kwargs)
 
 
 def _tail_lines(path: Path, n: int) -> List[str]:

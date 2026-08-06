@@ -113,6 +113,8 @@ export const tr: Translations = {
     platformError: "hata",
     recentSessions: "Son Oturumlar",
     restartGateway: "Ağ Geçidini Yeniden Başlat",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "Ağ geçidi yeniden başlatılıyor…",
     running: "Çalışıyor",
     runningRemote: "Çalışıyor (uzak)",

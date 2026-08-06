@@ -113,6 +113,8 @@ export const ru: Translations = {
     platformError: "ошибка",
     recentSessions: "Недавние сессии",
     restartGateway: "Перезапустить шлюз",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "Перезапуск шлюза…",
     running: "Работает",
     runningRemote: "Работает (удалённо)",

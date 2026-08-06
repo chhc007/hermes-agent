@@ -113,6 +113,8 @@ export const ga: Translations = {
     platformError: "earráid",
     recentSessions: "Seisiúin le déanaí",
     restartGateway: "Atosaigh an gateway",
+    restartDashboard: "Restart Dashboard",
+    restartingDashboard: "Restarting dashboard…",
     restartingGateway: "Ag atosú an gateway…",
     running: "Ag rith",
     runningRemote: "Ag rith (cianda)",

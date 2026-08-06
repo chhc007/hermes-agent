@@ -143,6 +143,10 @@ export interface Translations {
     restartGatewayConfirmMessage?: string;
     restartGatewayConfirmTitle?: string;
     restartingGateway: string;
+    restartDashboard: string;
+    restartingDashboard: string;
+    restartDashboardConfirmMessage?: string;
+    restartDashboardConfirmTitle?: string;
     running: string;
     runningRemote: string;
     startFailed: string;

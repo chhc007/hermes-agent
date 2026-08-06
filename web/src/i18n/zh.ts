@@ -130,6 +130,11 @@ export const zh: Translations = {
     restartGatewayConfirmTitle: "重启网关？",
     restartGatewayConfirmMessage:
       "这将重启 Hermes 网关进程。连接中的渠道和活动会话随后会重新连接。",
+    restartDashboard: "重启 Dashboard",
+    restartingDashboard: "正在重启 Dashboard…",
+    restartDashboardConfirmTitle: "重启 Dashboard？",
+    restartDashboardConfirmMessage:
+      "这将重启 Dashboard 进程，所有正在运行的 TUI/PTY 会话都会被中断，页面会短暂断连后自动恢复。确定继续吗？",
     updateHermesConfirmTitle: "更新 Hermes？",
     updateHermesConfirmMessage:
       "这将运行 hermes update 并在完成后重启网关。在此之前，活动会话会保留其提示缓存。",

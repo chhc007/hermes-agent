@@ -1267,6 +1267,8 @@ export const api = {
   runPromptSize: () =>
     fetchJSON<ActionResponse>("/api/ops/prompt-size", { method: "POST" }),
   runDump: () => fetchJSON<ActionResponse>("/api/ops/dump", { method: "POST" }),
+  restartDashboard: () =>
+    fetchJSON<ActionResponse>("/api/ops/restart-dashboard", { method: "POST" }),
   runConfigMigrate: () =>
     fetchJSON<ActionResponse>("/api/ops/config-migrate", { method: "POST" }),
   runDebugShare: (opts?: { redact?: boolean; lines?: number }) =>
