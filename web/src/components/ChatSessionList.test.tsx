@@ -217,6 +217,33 @@ describe("ChatSessionList", () => {
     expect(container.querySelectorAll("span").length).toBeGreaterThan(0);
   });
 
+  it("requests include_children so subagent sessions appear in the list", async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({
+      sessions: [makeSession({ id: "a" })],
+    } as never);
+    await render(
+      <MemoryRouter>
+        <ChatSessionList activeSessionId={null} />
+      </MemoryRouter>,
+    );
+    expect(vi.mocked(api.getSessions).mock.calls[0][4]).toBe(true);
+  });
+
+  it("marks delegate (subagent) sessions with a 子代理 badge", async () => {
+    vi.mocked(api.getSessions).mockResolvedValue({
+      sessions: [
+        makeSession({ id: "child", is_delegate: true, title: "Subtask" }),
+        makeSession({ id: "root", title: "Main chat" }),
+      ],
+    } as never);
+    await render(
+      <MemoryRouter>
+        <ChatSessionList activeSessionId={null} />
+      </MemoryRouter>,
+    );
+    expect(container.textContent).toContain("子代理");
+  });
+
   it("switches ordering to created and refetches with the new order", async () => {
     vi.mocked(api.getSessions).mockResolvedValue({
       sessions: [makeSession({ id: "a" })],

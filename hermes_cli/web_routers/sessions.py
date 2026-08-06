@@ -62,6 +62,7 @@ def get_sessions(
     exclude_sources: str = None,
     cwd_prefix: str = None,
     full: bool = False,
+    include_children: bool = False,
     profile: Optional[str] = None,
 ):
     """List sessions.
@@ -119,6 +120,7 @@ def get_sessions(
                 min_message_count=min_message_count,
                 include_archived=include_archived,
                 archived_only=archived_only,
+                include_children=include_children,
                 order_by_last_active=order == "recent",
                 # SQL-level projection: when the caller didn't ask for full
                 # rows, skip the system_prompt blob inside SQLite too (pairs

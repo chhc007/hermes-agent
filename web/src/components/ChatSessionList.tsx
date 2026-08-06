@@ -119,7 +119,7 @@ export function ChatSessionList({
         setError(null);
       }
       api
-        .getSessions(SESSION_LIMIT, 0, scopeKey, order)
+        .getSessions(SESSION_LIMIT, 0, scopeKey, order, true)
         .then((res) => {
           if (reqRef.current !== myReq) return;
           setSessions(res.sessions);
@@ -296,6 +296,14 @@ export function ChatSessionList({
                 {isActive && (
                   <span className="inline-flex shrink-0 items-center border border-primary/50 bg-primary/10 px-1 py-px text-[0.625rem] leading-none tracking-wide text-primary">
                     当前
+                  </span>
+                )}
+                {s.is_delegate && (
+                  <span
+                    className="inline-flex shrink-0 items-center border border-purple-500/50 bg-purple-500/10 px-1 py-px text-[0.625rem] leading-none tracking-wide text-purple-400"
+                    title="子代理会话（由其他会话委托生成）"
+                  >
+                    子代理
                   </span>
                 )}
                 <span

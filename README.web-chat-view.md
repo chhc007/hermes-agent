@@ -39,6 +39,7 @@
 | 🔦 **当前会话高亮** | 会话列表高亮当前激活会话（`session.info` 的 `stored_session_id`，fresh chat 也能识别），带「当前」徽标 + 主题色背景/边框 |
 | 📶 **会话排序切换** | 会话列表支持「最近活跃 / 创建时间」两种排序（后端 `order` 参数已支持，前端切换即时重拉） |
 | 🕐 **消息时间戳** | 每条消息（用户/助手/系统气泡）显示发送时间 `YYYY-MM-DD HH:mm:ss`，兼容秒/毫秒时间戳 |
+| 🧒 **子代理会话标记** | 列表包含子代理会话（`include_children`）并显示「子代理」徽标（`_delegate_from` 标记识别），当前对话即使由 delegate 生成也能看到并选中 |
 
 ---
 
@@ -319,7 +320,8 @@ npm run build --workspace web
 
 - **v1.3**（当前，稳定）：v1.2.2 + 会话列表**当前会话高亮**（`session.info.stored_session_id`，
   fresh chat 也识别）+ **排序切换**（最近活跃/创建时间）+ **消息时间戳**
-  （`YYYY-MM-DD HH:mm:ss`，用户/助手/系统气泡）
+  （`YYYY-MM-DD HH:mm:ss`，用户/助手/系统气泡）+ **子代理会话识别/标记**
+  （列表 `include_children` 包含 delegate 子会话，「子代理」徽标，`_delegate_from` 判定）
 - **v1.2.2**：v1.2.1 + 会话列表自动刷新（resume/30s 轮询/回前台）+ PortalSelect
   思考下拉（portal 定位防裁剪）+ **气泡事件流修复**：subagent 会话 transport 被 detach 时
   事件不再静默丢弃（`write_json` 回退 live transports 广播，见下方「故障排查」）

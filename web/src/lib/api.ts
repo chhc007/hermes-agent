@@ -374,11 +374,13 @@ export const api = {
     offset = 0,
     profileOrOptions: string | SessionQueryOptions = getManagementProfile(),
     order: "created" | "recent" = "created",
+    includeChildren = false,
   ) => {
     const options = normalizeSessionQueryOptions(profileOrOptions, order);
     return fetchJSON<PaginatedSessions>(
       appendSessionFilters(
-        `/api/sessions?limit=${limit}&offset=${offset}&order=${options.order ?? order}`,
+        `/api/sessions?limit=${limit}&offset=${offset}&order=${options.order ?? order}` +
+          `&include_children=${includeChildren ? 1 : 0}`,
         options,
       ),
     );
@@ -1898,6 +1900,8 @@ export interface SessionInfo {
   output_tokens: number;
   preview: string | null;
   parent_session_id?: string | null;
+  /** True when this session is a delegated subagent child (has `_delegate_from`). */
+  is_delegate?: boolean;
 }
 
 export interface SessionLatestDescendantResponse {
