@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.2.1-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.2.1">
+  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.2.2-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.2.2">
   <img src="https://img.shields.io/badge/状态-稳定-green?style=for-the-badge" alt="Status: stable">
   <img src="https://img.shields.io/badge/测试-278%20passed-22c55e?style=for-the-badge" alt="Tests: 278 passed">
   <img src="https://img.shields.io/badge/后端-479%20passed-22c55e?style=for-the-badge" alt="Backend tests: 479 passed">
@@ -34,6 +34,8 @@
 | 🤏 **thinking 折叠预览** | 思考块默认收起，只显示最新几行预览；点开看完整内容 |
 | 🏷️ **终端命令徽标** | slash 补全列表中需要 TUI 交互的命令（`/memory`、`/skills` 等）标注「终端」徽标 |
 | 💡 **终端命令提示** | 在聊天框发送终端专属命令时，追加本地提示气泡（命令仍会转发到终端执行） |
+| 🔄 **会话列表自动刷新** | 左栏 `ChatSessionList` 三源刷新：`?resume` 参数变化立即刷新、30s 静默轮询、标签页回前台静默刷新（`load({silent})` 不闪 loading） |
+| 🎚️ **PortalSelect 下拉** | 思考程度下拉改用 portal+fixed 定位（`PortalSelect`），不再被 `overflow-y-auto` 容器裁剪，8 个选项完整可滚；位置实时跟随 + 翻转 + 键盘导航 |
 
 ---
 
@@ -226,6 +228,62 @@ hermes_cli/web_server.py               # 后端（仅 /api/media 放宽为任意
 - **流式期间显示纯文本**（无 markdown 格式），`message.complete` 后才格式化——这是稳定性
   的代价，属有意设计（见「流式渲染性能决策记录」）。流式时最后一行（无换行）可能延迟
   到行完结才完整显示。
+
+---
+
+## 🔧 故障排查：气泡不显示（历史能加载、新事件不显示）
+
+> 2026-08-06 实战记录。症状、根因、修复、诊断方法全流程。
+
+### 症状
+
+- 气泡窗口**历史消息能加载**（REST `/api/sessions/{id}/messages` 正常），但**新消息的
+  thinking / 工具卡片 / 文字回复全不显示**
+- 终端（xterm）能看到 agent 在处理；agent 日志（`agent.log`）也在正常跑
+- **只影响单个会话**，开新会话就正常
+
+### 根因（时间线还原）
+
+1. 用户在会话里 `delegate_task` 委托了 subagent —— **气泡显示的是 subagent 的 mirror 事件**
+2. subagent 事件（`reasoning.delta` / `tool.start` / `message.delta` …）由
+   `tui_gateway/server.py` 的 `_mirror_subagent_to_child` 发给 **subagent 会话自己的 sid**
+3. 用户**刷新页面 / 切换会话**时，浏览器 `/api/pty` 连接断开 → 会话 transport 被重定向为
+   `_detached_ws_transport`（`_DropTransport`，**静默丢弃一切**）
+4. subagent 的 agent 循环还在跑（在 dashboard 进程内），但事件全部写进 DropTransport → 气泡静默
+5. 全局广播（`sessions.changed` 等）走 `_live_transports` 不受影响 —— 所以不是"连接全断"，
+   而是**只有 session 定向事件丢失**
+
+### 修复（v1.2.2，`tui_gateway/server.py`）
+
+`write_json()`：session transport 是 `_detached_ws_transport` 时，回退到
+`_broadcast_frame_to_live()` —— 把原帧广播到所有 live transports（node → sidecar → channel →
+气泡），而不是丢弃。健康会话仍只走单 transport（不双发）。
+
+```python
+if sid and (t := (_sessions.get(sid) or {}).get("transport")) is not None:
+    if t is not _detached_ws_transport:
+        return t.write(obj)
+    return _broadcast_frame_to_live(obj)   # detached → 广播兜底
+```
+
+### 诊断方法（下次直接照做）
+
+```bash
+# 1. 用 internal credential 订阅事件流（可从 PTY 进程 env 拿 HERMES_TUI_SIDECAR_URL 的 channel）
+#    ws://127.0.0.1:9119/api/events?internal=<cred>&channel=<channel>
+#    若 thinking/tool/message 全无、只有 sessions.changed → session 定向事件丢失
+
+# 2. 查 live 会话（subagent 也在列）
+#    /api/ws 发 JSON-RPC: {"method":"session.active_list"}
+#    找不到目标会话 / status=working 但事件不发 → transport detached
+
+# 3. 看 gui.log：刷新时段大量 `ws closed ... detached_sessions=N` → 会话被 detach
+```
+
+### 预防
+
+- 前端：`ChatPage` 的 keep-alive channel 逻辑保持稳定（token 派生，刷新不变）
+- 后端：`write_json` 的 detached fallback（已修）保证 subagent 事件不因连接断开而消失
 - **表格解析**要求表头行下一行是 GFM 分隔行（`|---|`）；段落/列表后无空行直接接表格
   已支持（2026-08-05 修复）
 - **移动端键盘**：Android Chrome 走 `interactive-widget=resizes-content`；iOS 靠
@@ -256,7 +314,10 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.2.1**（当前，稳定）：v1.2 + thinking 折叠预览固定高度（防闪）+ 终端命令徽标/提示
+- **v1.2.2**（当前，稳定）：v1.2.1 + 会话列表自动刷新（resume/30s 轮询/回前台）+ PortalSelect
+  思考下拉（portal 定位防裁剪）+ **气泡事件流修复**：subagent 会话 transport 被 detach 时
+  事件不再静默丢弃（`write_json` 回退 live transports 广播，见下方「故障排查」）
+- **v1.2.1**：v1.2 + thinking 折叠预览固定高度（防闪）+ 终端命令徽标/提示
   （`terminal-commands.ts` 单一事实源；chat 发送终端专属命令时本地提示气泡；命令仍转发终端）
 - **v1.2**：v1.1 + 有序片段（segments 时间线）+ thinking 折叠预览
   + 表格解析修复 + 移动端键盘适配
