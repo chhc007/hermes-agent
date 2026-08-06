@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.3-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.3">
+  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.4-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.4">
   <img src="https://img.shields.io/badge/状态-稳定-green?style=for-the-badge" alt="Status: stable">
-  <img src="https://img.shields.io/badge/测试-278%20passed-22c55e?style=for-the-badge" alt="Tests: 278 passed">
+  <img src="https://img.shields.io/badge/测试-300%20passed-22c55e?style=for-the-badge" alt="Tests: 300 passed">
   <img src="https://img.shields.io/badge/后端-479%20passed-22c55e?style=for-the-badge" alt="Backend tests: 479 passed">
 </p>
 
@@ -40,6 +40,7 @@
 | 📶 **会话排序切换** | 会话列表支持「最近活跃 / 创建时间」两种排序（后端 `order` 参数已支持，前端切换即时重拉） |
 | 🕐 **消息时间戳** | 每条消息（用户/助手/系统气泡）显示发送时间 `YYYY-MM-DD HH:mm:ss`，兼容秒/毫秒时间戳 |
 | 🧒 **子代理会话标记** | 列表包含子代理会话（`include_children`）并显示「子代理」徽标（`_delegate_from` 标记识别），当前对话即使由 delegate 生成也能看到并选中 |
+| 🇨🇳 **完整汉化** | zh 翻译补全（63 key，不再 fallback 英文）+ 默认语言中文（浏览器 `zh*` 自动识别，localStorage 手动选择优先）+ Chat 核心组件全 i18n（输入框/气泡/澄清/媒体） |
 
 ---
 
@@ -318,7 +319,11 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.3**（当前，稳定）：v1.2.2 + 会话列表**当前会话高亮**（`session.info.stored_session_id`，
+- **v1.4**（当前，稳定）：**完整汉化** — zh 翻译补全（63 key）、默认语言中文（浏览器
+  `zh*` 识别 + localStorage 优先）、Chat 核心组件全 i18n（`chat` 命名空间：
+  ChatInput/MessageBubble/ClarifyCard/MediaImage/ChatMessageList）、所有语言文件
+  同步新 key（14 语言 × sessions/chat）
+- **v1.3**：v1.2.2 + 会话列表**当前会话高亮**（`session.info.stored_session_id`，
   fresh chat 也识别）+ **排序切换**（最近活跃/创建时间）+ **消息时间戳**
   （`YYYY-MM-DD HH:mm:ss`，用户/助手/系统气泡）+ **子代理会话识别/标记**
   （列表 `include_children` 包含 delegate 子会话，「子代理」徽标，`_delegate_from` 判定）
