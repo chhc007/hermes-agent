@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.4-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.4">
+  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.5-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.5">
   <img src="https://img.shields.io/badge/状态-稳定-green?style=for-the-badge" alt="Status: stable">
-  <img src="https://img.shields.io/badge/测试-300%20passed-22c55e?style=for-the-badge" alt="Tests: 300 passed">
+  <img src="https://img.shields.io/badge/测试-326%20passed-22c55e?style=for-the-badge" alt="Tests: 326 passed">
   <img src="https://img.shields.io/badge/后端-479%20passed-22c55e?style=for-the-badge" alt="Backend tests: 479 passed">
 </p>
 
@@ -296,6 +296,79 @@ if sid and (t := (_sessions.get(sid) or {}).get("transport")) is not None:
 
 ---
 
+## 🔧 故障排查：侧边栏切会话无效（气泡加载历史、终端是新对话、打字无效）
+
+> 2026-08-07 实战记录。症状、根因（两个独立 bug）、修复、诊断方法全流程。
+
+### 症状
+
+- 点击侧边栏某历史会话：**气泡正确加载了该会话历史**（REST），但**终端显示的是
+  另一个「新对话」**，会话没有真正切换
+- 气泡里打字**无效**（输入走 PTY，但 PTY 实际跑的是别的会话；回复事件也不回来）
+- 之后再点侧边栏任何会话都**切不进去**（卡死状态）
+
+### 根因（两个 bug 叠加）
+
+**Bug 1 — `fresh=1` 与 `resume` 并发导致幽灵 PTY（前端，`ChatPage.tsx`）**
+
+- `forceFreshPtyRef` 是跨 render 的 latch。点「新对话」后**立即**点侧边栏会话时，
+  connect effect 可能带着 `fresh=1 + resume=<旧会话>` 的请求运行
+- 后端 `pty_ws` 的 fresh 分支**优先清空 resume** → spawn 出一个「新对话」PTY，
+  但它仍占用 resume 会话派生出的 **channel**（channel 由前端 resume 参数派生，
+  attach key 由后端 registry_resume 派生，fresh 场景两者脱钩）
+- 结果：**两个 PTY 同时 publish 到同一个 channel**，还共用同一个
+  active_session_file → 事件流互相污染、active 会话文件被覆盖
+
+**Bug 2 — attach key 复用不校验 PTY 内部实际会话（后端，`web_server.py`）**
+
+- keep-alive attach key = `token\0profile\0registry_resume`，只反映**请求的**
+  resume 目标，不反映 PTY 子进程**当前的**会话
+- TUI 子进程内部可切换会话（`/new`、`/resume`、agent 切换）→ active_session_file
+  更新，但 registry key 不变
+- 之后点击原 resume 会话 → attach_or_spawn **复用漂移的旧 PTY** → 终端显示旧
+  PTY 内部会话，气泡加载 resume 目标历史，事件流跟 channel → **三方脱节**
+
+### 修复（v1.5）
+
+**前端 `web/src/pages/ChatPage.tsx`：**
+- `params.fresh` 只在 `resumeParam` 为空时发送（`if (forceFresh && !resumeParam)`）
+  → 杜绝 fresh + resume 并存
+- `startFreshDashboardChat` / `startFreshPty` **同步 rotate** attach token
+  （在 setSearchParams 之前），channel 与 attach key 保持一致
+
+**后端 `hermes_cli/web_server.py` + `pty_session.py`：**
+- `PtySessionRegistry.discard(key)`：强制移除并异步关闭 PTY（重建用）
+- `_live_sid_matches_resume(live_sid, stored_key)`：active_session_file 里的
+  会话是否等于 resume 目标。**兼容两种格式**：resume/activate 路径写入存储 id
+  （`20260807_...`），新会话路径写入内部短 id（`e71bf884`）
+- `pty_ws` 复用前校验：`attach_or_spawn` 返回复用（`created=False`）且请求带
+  resume 时，读 active_session_file 校验；不一致 → discard 旧 PTY + 清空
+  active 文件 + 重新 spawn
+
+### 诊断方法
+
+```bash
+# 1. 看 gui.log 是否有漂移重建记录
+grep "pty resume drift" ~/.hermes/logs/gui.log
+# → WARNING pty resume drift: channel=... resume=... live_sid=... → respawn
+
+# 2. 查 live 会话（dashboard 进程内 tui_gateway）
+# /api/ws 发 JSON-RPC: {"method":"session.active_list"}
+# 对比每个 PTY 子进程的 HERMES_TUI_RESUME（/proc/<pid>/environ）与
+# active_session_file 内容，不一致即漂移
+
+# 3. 查同 channel 双 PTY（Bug 1 残留）
+# 多个 node ui-tui 进程的 HERMES_TUI_SIDECAR_URL 含相同 channel → 污染
+```
+
+### 预防
+
+- 前端：fresh 标志与 resume 参数互斥（已修）
+- 后端：attach 复用前校验 active 会话（已修）；active_session_file 格式不统一
+  的坑已记录（resume 写存储 id / 新会话写短 id）
+
+---
+
 ## 🧪 开发
 
 ```bash
@@ -331,7 +404,14 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.4**（当前，稳定）：**完整汉化** — zh 翻译补全（63 key）、默认语言中文（浏览器
+- **v1.5**（当前，稳定）：**会话切换脱节修复** — 侧边栏切会话「气泡加载历史但终端
+  是新对话、打字无效」双 bug 修复：前端 `fresh=1` 与 `resume` 互斥 + 同步 rotate
+  attach token（杜绝幽灵 PTY 同 channel 双发）；后端 attach 复用前校验
+  active_session_file 实际会话（`_live_sid_matches_resume`，兼容存储 id/短 id 两种
+  格式），漂移时强制重建 PTY（`PtySessionRegistry.discard`）。见上方「故障排查」。
+  另修复 lint 依赖缺失（eslint 相关包补入 devDependencies）+ `PortalSelect.tsx`
+  未使用参数清理。
+- **v1.4**：**完整汉化** — zh 翻译补全（63 key）、默认语言中文（浏览器
   `zh*` 识别 + localStorage 优先）、Chat 核心组件全 i18n（`chat` 命名空间：
   ChatInput/MessageBubble/ClarifyCard/MediaImage/ChatMessageList）、所有语言文件
   同步新 key（14 语言 × sessions/chat）

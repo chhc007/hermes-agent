@@ -266,7 +266,7 @@ export function PortalSelect({
 
 // Marker component — `PortalSelect` reads `value`/`children` from its tree.
 // Renders nothing on its own.
-export function PortalSelectOption(_props: PortalSelectOptionProps) {
+export function PortalSelectOption() {
   return null;
 }
 
@@ -323,11 +323,6 @@ function collectOptions(children: ReactNode): PortalSelectOptionData[] {
 
 interface PortalSelectOptionData {
   label: string;
-  value: string;
-}
-
-interface PortalSelectOptionProps {
-  children: ReactNode;
   value: string;
 }
 

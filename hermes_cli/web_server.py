@@ -15220,6 +15220,49 @@ def _forget_active_session_file(path: Path) -> None:
         pass
 
 
+def _live_sid_matches_resume(
+    live_sid: Optional[str], stored_key: str
+) -> Optional[bool]:
+    """Whether a gateway live session (internal sid) is bound to the stored
+    session key we asked the PTY to resume.
+
+    The TUI child can switch conversations internally (``/new``, ``/resume``,
+    agent-initiated session changes) without the dashboard's attach registry
+    noticing — the registry key only reflects the *requested* resume target,
+    not the child's *current* session. Comparing the per-channel active
+    session file against the canonical resume target is how we detect that
+    drift so a stale PTY is rebuilt instead of reused.
+
+    The active-session file stores BOTH shapes: resume/activate paths write
+    the durable stored key (``20260807_...``), while fresh ``newSession``
+    writes the gateway's internal short sid (``e71bf884``). Handle both.
+
+    Returns None when the mapping cannot be verified (gateway still starting,
+    import failure) — callers treat None as "unknown, reuse is acceptable".
+    """
+    if not live_sid or not stored_key:
+        return None
+    # Direct stored-key match: resume/activate wrote the durable id.
+    if live_sid == stored_key:
+        return True
+    # Internal short-sid path: resolve to its stored key.
+    try:
+        from tui_gateway import server as _tg  # lazy: dashboard-embedded only
+
+        with _tg._sessions_lock:
+            sess = _tg._sessions.get(live_sid)
+    except Exception:
+        return None
+    if sess is None:
+        # A live sid that matches neither the stored key nor a gateway short
+        # sid means the child's active conversation is not the resume target.
+        # Rebuild conservatively (this is exactly the drift case); the only
+        # benign miss would be a short-lived reap race, which respawns into
+        # the correct conversation anyway.
+        return False
+    return (sess.get("session_key") or "") == stored_key
+
+
 def _ws_close_reason(text: str) -> str:
     """Clamp a WS close reason to the protocol's 123-byte UTF-8 limit.
 
@@ -15922,7 +15965,7 @@ async def pty_ws(ws: WebSocket) -> None:
 
     # Keep-alive path: the PTY outlives this socket; reattach by token.
     try:
-        session, _created = await PTY_REGISTRY.attach_or_spawn(
+        session, created = await PTY_REGISTRY.attach_or_spawn(
             attach_token, spawn=_spawn
         )
     except PtyUnavailableError as exc:
@@ -15933,6 +15976,42 @@ async def pty_ws(ws: WebSocket) -> None:
         await ws.send_text(f"\r\n\x1b[31mChat unavailable: {exc}\x1b[0m\r\n")
         await ws.close(code=1011)
         return
+
+    # Reuse guard: a live PTY is only reusable while it is still on the
+    # requested conversation. The TUI child can switch sessions internally
+    # (/new, /resume, agent-initiated session changes) without the attach
+    # registry noticing — the registry key only reflects the *requested*
+    # resume target, not the child's *current* session. Reattaching the
+    # drifted child would desync the chat bubbles (which load the resume
+    # target's history via REST), the terminal (which shows the child's
+    # actual session), and the event feed (which follows the channel) —
+    # typing in the bubble goes to the wrong conversation. Detect drift by
+    # comparing the per-channel active-session file against the canonical
+    # resume target; on mismatch, rebuild the PTY instead of reusing it.
+    if not created and resume and registry_resume and active_session_file is not None:
+        live_sid = _read_active_session_file(active_session_file)
+        match = _live_sid_matches_resume(live_sid or "", registry_resume)
+        if match is False:
+            _log.warning(
+                "pty resume drift: channel=%s resume=%s live_sid=%s → respawn",
+                channel,
+                registry_resume,
+                live_sid,
+            )
+            PTY_REGISTRY.discard(attach_token)
+            _forget_active_session_file(active_session_file)
+            try:
+                session, created = await PTY_REGISTRY.attach_or_spawn(
+                    attach_token, spawn=_spawn
+                )
+            except PtyUnavailableError as exc:
+                await ws.send_text(f"\r\n\x1b[31mChat unavailable: {exc}\x1b[0m\r\n")
+                await ws.close(code=1011)
+                return
+            except (FileNotFoundError, OSError, RegistryFull) as exc:
+                await ws.send_text(f"\r\n\x1b[31mChat unavailable: {exc}\x1b[0m\r\n")
+                await ws.close(code=1011)
+                return
 
     await session.attach(ws)
 

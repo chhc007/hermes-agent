@@ -170,6 +170,20 @@ class PtySessionRegistry:
         if s is not None:
             s.detach(ws)
 
+    def discard(self, key: str) -> bool:
+        """Force-remove a session by key and close it asynchronously.
+
+        Unlike ``detach`` (which keeps the PTY alive for a reattach), this is
+        used when a session must be rebuilt — e.g. the PTY child drifted to a
+        different conversation than the resume target. Returns True when a
+        session was actually removed.
+        """
+        s = self._sessions.pop(key, None)
+        if s is None:
+            return False
+        asyncio.create_task(s.close())
+        return True
+
     async def reap_idle(self, now: Optional[float] = None) -> None:
         now = time.monotonic() if now is None else now
         doomed = [

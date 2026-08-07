@@ -126,6 +126,29 @@ async def test_new_key_at_capacity_raises_when_none_reapable():
 
 
 @pytest.mark.asyncio
+async def test_discard_removes_and_closes_session():
+    from hermes_cli.pty_session import PtySessionRegistry
+    reg = PtySessionRegistry(
+        ttl=60, max_sessions=4, buffer_cap=1024, read_timeout=0.01
+    )
+    b1 = FakeBridge([b"", b"", b""])
+    s1, created1 = await reg.attach_or_spawn("tok", spawn=lambda: b1)
+    assert created1 is True
+
+    removed = reg.discard("tok")
+    assert removed is True
+    # A second spawn with the same key must create a NEW session — the old
+    # one is no longer reusable even though it was still alive.
+    s2, created2 = await reg.attach_or_spawn("tok", spawn=lambda: FakeBridge([]))
+    assert created2 is True
+    assert s2 is not s1
+
+    # Discarding an unknown key is a harmless no-op.
+    assert reg.discard("missing") is False
+    await reg.close_all()
+
+
+@pytest.mark.asyncio
 async def test_reaper_loop_invokes_reap(monkeypatch):
     from hermes_cli.pty_session import run_reaper
     reg = make_registry()

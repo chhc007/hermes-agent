@@ -291,6 +291,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   }, [clearReconnectTimer]);
   const startFreshPty = useCallback(() => {
     forceFreshPtyRef.current = true;
+    // Rotate synchronously (see startFreshDashboardChat): the channel is
+    // derived from the token, so a fresh PTY must get a fresh channel.
+    ptyAttachToken(true);
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
     blockedInputNoticeRef.current = false;
@@ -306,7 +309,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     const next = new URLSearchParams(searchParams);
 
     next.delete("resume");
+    // Rotate the keep-alive token SYNCHRONOUSLY, before the channel is
+    // recomputed on the next render. The channel id is derived from the
+    // attach token, so a fresh chat must use a fresh channel; leaving the
+    // rotation to the connect effect would let the new (resume-less) PTY
+    // reuse the previous conversation's channel and corrupt its event feed.
     forceFreshPtyRef.current = true;
+    ptyAttachToken(true);
     reconnectAttemptRef.current = 0;
     clearReconnectTimer();
     blockedInputNoticeRef.current = false;
@@ -1218,12 +1227,21 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     void (async () => {
       if (unmounting) return;
       const params: Record<string, string> = { channel };
+      // A "fresh" request must never carry a resume target: sending both
+      // lets the backend's fresh-handling null out resume and spawn a
+      // brand-new conversation PTY that still occupies the resumed
+      // session's channel (two PTY children publishing to one channel →
+      // corrupted event feed + active-session file). forceFreshPtyRef is a
+      // cross-render latch, so a stale flag set by "New chat" can survive
+      // into a session pick; gate `fresh` on the resume param being absent.
       if (resumeParam) params.resume = resumeParam;
-      if (forceFresh) params.fresh = "1";
+      if (forceFresh && !resumeParam) params.fresh = "1";
       // Keep-alive identity: reattach to this tab's living PTY across
-      // refresh/transient drops. A forced-fresh start rotates the token so
-      // the previous keep-alive PTY is not reattached (registry reaps it).
-      params.attach = ptyAttachToken(forceFresh);
+      // refresh/transient drops. Rotation happens synchronously in the
+      // fresh-chat callbacks (startFreshDashboardChat / startFreshPty), so
+      // the channel (computed at render time from the token) and the attach
+      // key always agree; never rotate again here.
+      params.attach = ptyAttachToken(false);
       // Profile-scoped chat: the PTY child gets HERMES_HOME pointed at the
       // selected profile, so the conversation runs with that profile's model,
       // skills, memory, and sessions (see web_server._resolve_chat_argv).

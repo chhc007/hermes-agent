@@ -3714,6 +3714,211 @@ class TestPtyWebSocket:
         # A subscriber on a different channel got nothing.
         assert sub_other.sent == []
 
+    def test_live_sid_matches_resume_maps_internal_sid_to_stored_key(self, monkeypatch):
+        """The drift guard maps a gateway live sid to its stored session key."""
+        from hermes_cli import web_server as ws_mod
+        from tui_gateway import server as tg
+
+        fake_sessions = {
+            "abc123": {"session_key": "20260807_005735_9375ef"},
+            "def456": {"session_key": "20260807_013301_f2041f"},
+        }
+
+        monkeypatch.setattr(tg, "_sessions", fake_sessions)
+
+        # Same conversation (short sid) → True (reuse is safe).
+        assert (
+            ws_mod._live_sid_matches_resume("abc123", "20260807_005735_9375ef")
+            is True
+        )
+        # Active file may store the durable stored key directly (resume /
+        # activate paths write it) — exact match → True.
+        assert (
+            ws_mod._live_sid_matches_resume(
+                "20260807_005735_9375ef", "20260807_005735_9375ef"
+            )
+            is True
+        )
+        # Live sid belongs to a DIFFERENT conversation → False (drift → respawn).
+        assert (
+            ws_mod._live_sid_matches_resume("def456", "20260807_005735_9375ef")
+            is False
+        )
+        # Stored key that does not match AND is not a known short sid → False
+        # (conservative rebuild — the child drifted to an unknown conversation).
+        assert (
+            ws_mod._live_sid_matches_resume(
+                "20260807_013301_f2041f", "20260807_005735_9375ef"
+            )
+            is False
+        )
+        # Empty inputs → None (cannot verify → reuse accepted).
+        assert ws_mod._live_sid_matches_resume("", "20260807_005735_9375ef") is None
+        assert ws_mod._live_sid_matches_resume("abc123", "") is None
+        assert ws_mod._live_sid_matches_resume(None, "x") is None
+
+    def test_pty_ws_respawns_when_child_drifted_off_resume_target(
+        self, monkeypatch
+    ):
+        """Reattaching a resume target whose live PTY child drifted to a
+        different conversation rebuilds the PTY instead of reusing the stale
+        child (the bug that desynced bubbles / terminal / event feed)."""
+        import hermes_cli.web_server as ws_mod
+        from hermes_cli.pty_session import PtySessionRegistry
+        from tui_gateway import server as tg
+
+        class _FakeBridge:
+            def __init__(self):
+                self.written = bytearray()
+                self.closed = False
+
+            def read(self, timeout):
+                return b""
+
+            def write(self, data):
+                self.written.extend(data)
+
+            def resize(self, cols, rows):
+                pass
+
+            def close(self):
+                self.closed = True
+
+        bridges: list[_FakeBridge] = []
+
+        def _spawn(argv, **kwargs):
+            b = _FakeBridge()
+            bridges.append(b)
+            return b
+
+        monkeypatch.setattr(
+            ws_mod,
+            "_resolve_chat_argv",
+            lambda resume=None, sidecar_url=None, profile=None, active_session_file=None: (
+                ["node", "dist/entry.js"],
+                "/tmp/ui-tui",
+                {"HERMES_TUI_RESUME": resume or ""},
+            ),
+        )
+        monkeypatch.setattr(
+            ws_mod.PtyBridge, "spawn", classmethod(lambda cls, *a, **k: _spawn(*a, **k))
+        )
+        # Isolate this test from any live registry state.
+        reg = PtySessionRegistry(
+            ttl=60, max_sessions=4, buffer_cap=1024, read_timeout=0.01
+        )
+        monkeypatch.setattr(ws_mod, "PTY_REGISTRY", reg)
+        # Gateway live-session map: sid-a belongs to sess-A (the resume
+        # target), sid-b belongs to sess-B (the drifted conversation).
+        monkeypatch.setattr(
+            tg,
+            "_sessions",
+            {"sid-a": {"session_key": "sess-A"}, "sid-b": {"session_key": "sess-B"}},
+        )
+
+        channel = "chat-drift-test"
+        active_file = ws_mod._active_session_file_for_channel(ws_mod.app, channel)
+
+        # First connection spawns the PTY resuming sess-A; the child reports
+        # sid-a as its active session.
+        with self.client.websocket_connect(
+            self._url(attach="tok1", channel=channel, resume="sess-A")
+        ):
+            active_file.write_text('{"session_id": "sid-a"}', encoding="utf-8")
+        assert len(bridges) == 1
+        key = "tok1\x00\x00sess-A"
+        assert reg._sessions[key].bridge is bridges[0]
+
+        # The child drifts to sess-B (e.g. /new inside the terminal) while
+        # detached; the registry key is unchanged but the live session is not
+        # the resume target anymore.
+        active_file.write_text('{"session_id": "sid-b"}', encoding="utf-8")
+
+        # Second connection with the SAME attach key + resume target must
+        # detect the drift, discard the stale child, and spawn a fresh PTY.
+        with self.client.websocket_connect(
+            self._url(attach="tok1", channel=channel, resume="sess-A")
+        ):
+            pass
+
+        assert len(bridges) == 2, "drifted child must be respawned"
+        assert reg._sessions[key].bridge is bridges[1]
+        # The stale child was closed (its bridge marked).
+        assert bridges[0].closed is True
+        # The active-session file was forgotten so the fresh child can claim
+        # it once it finishes starting.
+        assert not active_file.exists()
+
+    def test_pty_ws_reuses_child_still_on_resume_target(self, monkeypatch):
+        """A live PTY that is still on the requested conversation is reused
+        (keep-alive refresh must NOT respawn a healthy child)."""
+        import hermes_cli.web_server as ws_mod
+        from hermes_cli.pty_session import PtySessionRegistry
+        from tui_gateway import server as tg
+
+        class _FakeBridge:
+            def __init__(self):
+                self.closed = False
+
+            def read(self, timeout):
+                return b""
+
+            def write(self, data):
+                pass
+
+            def resize(self, cols, rows):
+                pass
+
+            def close(self):
+                self.closed = True
+
+        bridges: list[_FakeBridge] = []
+
+        def _spawn(argv, **kwargs):
+            b = _FakeBridge()
+            bridges.append(b)
+            return b
+
+        monkeypatch.setattr(
+            ws_mod,
+            "_resolve_chat_argv",
+            lambda resume=None, sidecar_url=None, profile=None, active_session_file=None: (
+                ["node", "dist/entry.js"],
+                "/tmp/ui-tui",
+                {"HERMES_TUI_RESUME": resume or ""},
+            ),
+        )
+        monkeypatch.setattr(
+            ws_mod.PtyBridge, "spawn", classmethod(lambda cls, *a, **k: _spawn(*a, **k))
+        )
+        reg = PtySessionRegistry(
+            ttl=60, max_sessions=4, buffer_cap=1024, read_timeout=0.01
+        )
+        monkeypatch.setattr(ws_mod, "PTY_REGISTRY", reg)
+        monkeypatch.setattr(
+            tg,
+            "_sessions",
+            {"sid-a": {"session_key": "sess-A"}},
+        )
+
+        channel = "chat-reuse-test"
+        active_file = ws_mod._active_session_file_for_channel(ws_mod.app, channel)
+
+        with self.client.websocket_connect(
+            self._url(attach="tok1", channel=channel, resume="sess-A")
+        ):
+            active_file.write_text('{"session_id": "sid-a"}', encoding="utf-8")
+        assert len(bridges) == 1
+
+        # Child still on sess-A → reattach reuses the same process.
+        with self.client.websocket_connect(
+            self._url(attach="tok1", channel=channel, resume="sess-A")
+        ):
+            pass
+
+        assert len(bridges) == 1, "healthy child must be reused, not respawned"
+        assert bridges[0].closed is False
+
 
 def test_resolve_chat_argv_injects_gateway_ws_url(monkeypatch):
     import hermes_cli.main as cli_main
