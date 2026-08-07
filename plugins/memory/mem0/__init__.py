@@ -446,11 +446,12 @@ class Mem0MemoryProvider(MemoryProvider):
                 results = backend.search(
                     query, filters=self._read_filters(), top_k=10, rerank=False,
                 )
-                # P3 优化（2026-08-07）：过滤低相关结果（score < 0.5），避免噪音注入上下文
+                # P3 优化（2026-08-07）：过滤低相关结果（score < 0.5）；无 score 的记忆保留（兼容 FakeBackend/旧数据）
                 lines = [
                     r.get("memory", "")
                     for r in (results or [])
-                    if r.get("memory") and float(r.get("score") or 0) >= _MIN_RELEVANCE_SCORE
+                    if r.get("memory")
+                    and (r.get("score") is None or float(r.get("score")) >= _MIN_RELEVANCE_SCORE)
                 ]
                 if lines:
                     body = "## Mem0 Memory\n" + "\n".join(f"- {l}" for l in lines)
@@ -552,8 +553,11 @@ class Mem0MemoryProvider(MemoryProvider):
                     rerank = bool(rerank_raw)
                 results = self._backend.search(query, filters=self._read_filters(), top_k=top_k, rerank=rerank)
                 self._record_success()
-                # P3 优化（2026-08-07）：过滤低相关结果（score < 0.5）
-                results = [r for r in (results or []) if float(r.get("score") or 0) >= _MIN_RELEVANCE_SCORE]
+                # P3 优化（2026-08-07）：过滤低相关结果（score < 0.5）；无 score 的记忆保留
+                results = [
+                    r for r in (results or [])
+                    if r.get("score") is None or float(r.get("score")) >= _MIN_RELEVANCE_SCORE
+                ]
                 if not results:
                     return json.dumps({"result": "No relevant memories found."})
                 items = [{"id": r.get("id"), "memory": r.get("memory", ""),
