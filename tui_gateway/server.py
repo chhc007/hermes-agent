@@ -6532,12 +6532,6 @@ def _make_agent(
         provider_require_parameters=_pr.get("require_parameters", False),
         provider_data_collection=_pr.get("data_collection"),
         platform=_resolve_agent_platform(platform_override),
-        # Dashboard/TUI chats are single-operator terminal sessions. Give them
-        # an explicit local principal so scoped memory providers (e.g.
-        # scope-recall) treat them as trusted instead of rejecting the runtime
-        # as a missing-principal web surface. Matches the CLI fallback identity
-        # (cli_user_id_fallback=local) so cross-platform shared scope works.
-        user_id=os.environ.get("HERMES_TUI_USER_ID") or "local",
         session_id=session_id or key,
         session_db=session_db if session_db is not None else _get_db(),
         ephemeral_system_prompt=system_prompt or None,
