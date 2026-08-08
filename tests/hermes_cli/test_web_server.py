@@ -885,6 +885,53 @@ class TestWebServerEndpoints:
 
     # ── Dashboard font override ─────────────────────────────────────────
 
+    def test_turn_snapshot_frame_composes_payload(self):
+        """turn.snapshot frame carries thinking/tools/partial text; hash stable."""
+        from hermes_cli import web_server
+
+        snapshot = {
+            "user": "hi",
+            "assistant": "partial reply",
+            "streaming": True,
+            "thinking": "let me think",
+            "tools": [
+                {"tool_id": "t1", "name": "terminal", "status": "running", "args_text": "ls"},
+                {"tool_id": "t2", "name": "read_file", "status": "complete", "summary": "ok", "duration_s": 0.5},
+                {"tool_id": "t3", "name": "web_search", "status": "error", "error": "boom"},
+                "not-a-dict",
+            ],
+        }
+        frame = web_server._compose_turn_snapshot_frame("sid-1", snapshot)
+        assert frame is not None
+        parsed = json.loads(frame)
+        assert parsed["method"] == "event"
+        params = parsed["params"]
+        assert params["type"] == "turn.snapshot"
+        assert params["session_id"] == "sid-1"
+        payload = params["payload"]
+        assert payload["thinking"] == "let me think"
+        assert payload["assistant"] == "partial reply"
+        assert payload["streaming"] is True
+        assert len(payload["tools"]) == 3  # non-dict entry skipped
+        assert payload["tools"][0] == {"tool_id": "t1", "name": "terminal", "status": "running", "args_text": "ls"}
+        assert payload["tools"][1] == {"tool_id": "t2", "name": "read_file", "status": "complete", "summary": "ok", "duration_s": 0.5}
+        assert payload["tools"][2] == {"tool_id": "t3", "name": "web_search", "status": "error", "error": "boom"}
+
+    def test_turn_snapshot_frame_none_for_empty_snapshot(self):
+        from hermes_cli import web_server
+
+        assert web_server._compose_turn_snapshot_frame("sid", None) is None
+        assert web_server._compose_turn_snapshot_frame("sid", {}) is None
+
+    def test_turn_complete_frame_shape(self):
+        from hermes_cli import web_server
+
+        frame = web_server._build_turn_complete_frame("sid-1", "last words")
+        parsed = json.loads(frame)
+        assert parsed["params"]["type"] == "message.complete"
+        assert parsed["params"]["session_id"] == "sid-1"
+        assert parsed["params"]["payload"] == {"text": "last words"}
+
 
 
 

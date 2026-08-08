@@ -15392,6 +15392,167 @@ def _build_replayed_session_info_frame(app, channel: str) -> Optional[str]:
         return None
 
 
+def _compose_turn_snapshot_frame(gateway_sid: str, snapshot: dict) -> str | None:
+    """Assemble the ``turn.snapshot`` event frame from an inflight snapshot.
+
+    Pure helper (no gateway state access) so the payload contract is
+    unit-testable. Prefers the ordered ``segments`` list when the gateway
+    recorded one (interleaved text/tool/thinking in true arrival order);
+    falls back to the flat thinking/tools/assistant fields for snapshots
+    produced by an older gateway.
+    """
+    if not snapshot:
+        return None
+    streaming = bool(snapshot.get("streaming", True))
+    segments = snapshot.get("segments")
+    payload: dict
+    if isinstance(segments, list) and segments:
+        ordered: list[dict] = []
+        for seg in segments:
+            if not isinstance(seg, dict):
+                continue
+            kind = str(seg.get("kind") or "")
+            if kind == "text":
+                text = str(seg.get("text") or "")
+                if text:
+                    ordered.append({"kind": "text", "text": text})
+            elif kind == "thinking":
+                text = str(seg.get("text") or "")
+                if text:
+                    ordered.append({"kind": "thinking", "text": text})
+            elif kind == "tool":
+                entry: dict = {
+                    "kind": "tool",
+                    "tool_id": str(seg.get("tool_id") or ""),
+                    "name": str(seg.get("name") or "tool"),
+                    "status": str(seg.get("status") or "running"),
+                }
+                if seg.get("args_text"):
+                    entry["args_text"] = str(seg["args_text"])
+                if seg.get("summary"):
+                    entry["summary"] = str(seg["summary"])
+                if seg.get("duration_s") is not None:
+                    entry["duration_s"] = seg["duration_s"]
+                if seg.get("error"):
+                    entry["error"] = str(seg["error"])
+                ordered.append(entry)
+        if ordered:
+            payload = {"segments": ordered, "streaming": streaming}
+        else:
+            payload = {"streaming": streaming}
+    else:
+        payload = {
+            "thinking": str(snapshot.get("thinking") or ""),
+            "assistant": str(snapshot.get("assistant") or ""),
+            "streaming": streaming,
+            "tools": [],
+        }
+        tools: list[dict] = []
+        for tool in snapshot.get("tools") or []:
+            if not isinstance(tool, dict):
+                continue
+            entry: dict = {
+                "tool_id": str(tool.get("tool_id") or ""),
+                "name": str(tool.get("name") or "tool"),
+                "status": str(tool.get("status") or "running"),
+            }
+            if tool.get("args_text"):
+                entry["args_text"] = str(tool["args_text"])
+            if tool.get("summary"):
+                entry["summary"] = str(tool["summary"])
+            if tool.get("duration_s") is not None:
+                entry["duration_s"] = tool["duration_s"]
+            if tool.get("error"):
+                entry["error"] = str(tool["error"])
+            tools.append(entry)
+        payload["tools"] = tools
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "method": "event",
+            "params": {
+                "type": "turn.snapshot",
+                "session_id": gateway_sid,
+                "payload": payload,
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
+def _build_turn_snapshot_frame(app, channel: str):
+    """Build one idempotent ``turn.snapshot`` frame for the channel's live turn.
+
+    The PTY emits ``thinking.delta`` / ``tool.start`` / ``message.delta`` once
+    at the time they happen, and the dashboard mirrors them to this endpoint
+    through the embedded TUI. When that mirror is unavailable (or a browser
+    subscribes late — refresh / reconnect), the gateway's live session still
+    keeps an ``inflight_turn`` snapshot (partial reply text + accumulated
+    thinking + running/finished tools). We synthesize a single snapshot frame
+    from it; the frontend reducer replaces the in-flight message's segments in
+    place (idempotent), so repeated polling repaints progress without
+    flicker.
+
+    Returns ``(frame, content_hash, assistant, gateway_sid)``; all ``None``
+    when there is nothing to replay.
+    """
+    try:
+        from tui_gateway import server as _tg  # lazy: dashboard-embedded only
+
+        path = _active_session_file_for_channel(app, channel)
+        file_sid = _read_active_session_file(path)
+        if not file_sid:
+            return None, None, None, None
+        gateway_sid: Optional[str] = None
+        session: Optional[dict] = None
+        with _tg._sessions_lock:
+            session = _tg._sessions.get(file_sid)
+            if session is not None:
+                gateway_sid = file_sid
+            else:
+                for cand_sid, cand in list(_tg._sessions.items()):
+                    if (cand.get("session_key") or "") == file_sid:
+                        session = cand
+                        gateway_sid = cand_sid
+                        break
+        if session is None or gateway_sid is None:
+            return None, None, None, None
+        snapshot = _tg._inflight_snapshot(session)
+        if not snapshot:
+            return None, None, None, None
+
+        frame = _compose_turn_snapshot_frame(gateway_sid, snapshot)
+        if not frame:
+            return None, None, None, None
+        content_hash = hashlib.sha256(frame.encode("utf-8")).hexdigest()
+        return frame, content_hash, str(snapshot.get("assistant") or ""), gateway_sid
+    except Exception:
+        _log.debug("turn snapshot build failed channel=%s", channel, exc_info=True)
+        return None, None, None, None
+
+
+def _build_turn_complete_frame(gateway_sid: str, text: str) -> str:
+    """Close an in-flight message with the last known partial reply.
+
+    Used by the events poller when a turn ends between snapshots: without the
+    live ``message.complete`` frame (mirror unavailable), the frontend would
+    hold the message in "streaming" forever. Best-effort text — the canonical
+    transcript is still in the session DB and re-hydrates on refresh.
+    """
+    return json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "method": "event",
+            "params": {
+                "type": "message.complete",
+                "session_id": gateway_sid,
+                "payload": {"text": text},
+            },
+        },
+        ensure_ascii=False,
+    )
+
+
 def _ws_close_reason(text: str) -> str:
     """Clamp a WS close reason to the protocol's 123-byte UTF-8 limit.
 
@@ -16290,12 +16451,51 @@ async def events_ws(ws: WebSocket) -> None:
         except Exception:
             _log.debug("session.info replay send failed channel=%s", channel)
 
+    # In-flight turn state: the dashboard's realtime mirror through the
+    # embedded TUI is the primary feed, but it is unavailable for a late
+    # subscriber (refresh / reconnect) and can be absent entirely when the
+    # mirror connection is down. Poll the gateway's inflight_turn snapshot and
+    # push an idempotent turn.snapshot frame whenever it changes, so the
+    # frontend always repaints the in-progress segments (thinking, tool cards,
+    # partial reply) — and closes the message when the turn ends.
+    _TURN_POLL_INTERVAL = 1.5
+    last_snapshot_hash: Optional[str] = None
+    last_assistant = ""
+
+    async def _send_snapshot_if_changed() -> None:
+        nonlocal last_snapshot_hash, last_assistant
+        frame, content_hash, assistant, gateway_sid = _build_turn_snapshot_frame(
+            ws.app, channel
+        )
+        if frame is not None and content_hash != last_snapshot_hash:
+            try:
+                await ws.send_text(frame)
+            except Exception:
+                return
+            last_snapshot_hash = content_hash
+            last_assistant = assistant
+        elif frame is None and last_snapshot_hash is not None and gateway_sid:
+            # Turn ended between snapshots — close the streaming message so
+            # the frontend doesn't hold it "streaming" forever. Best-effort
+            # text; the canonical transcript re-hydrates on refresh.
+            try:
+                await ws.send_text(_build_turn_complete_frame(gateway_sid, last_assistant or ""))
+            except Exception:
+                pass
+            last_snapshot_hash = None
+            last_assistant = ""
+
+    await _send_snapshot_if_changed()
+
     try:
         while True:
             # Subscribers don't speak — the receive() just blocks until
             # disconnect so the connection stays open as long as the
-            # browser holds it.
-            await ws.receive_text()
+            # browser holds it. Poll turn state on a timer.
+            try:
+                await asyncio.wait_for(ws.receive_text(), timeout=_TURN_POLL_INTERVAL)
+            except asyncio.TimeoutError:
+                await _send_snapshot_if_changed()
     except WebSocketDisconnect:
         pass
     finally:

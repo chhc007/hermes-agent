@@ -8,6 +8,7 @@ import {
   parseEventFrame,
   sessionMessagesToChatMessages,
   type ChatEventStreamState,
+  type ToolSegment,
   type ToolStatus,
 } from "./chat-event-stream";
 
@@ -199,6 +200,101 @@ describe("tool lifecycle edge cases", () => {
   });
 });
 
+describe("turn.snapshot", () => {
+  it("opens a streaming message from a snapshot with thinking + running tool + partial text", () => {
+    const state = reduce([
+      [
+        "turn.snapshot",
+        {
+          thinking: "step one",
+          tools: [{ tool_id: "t1", name: "terminal", args_text: "ls", status: "running" }],
+          assistant: "partial reply",
+          streaming: true,
+        },
+      ],
+    ]);
+    expect(state.messages).toHaveLength(1);
+    const [msg] = state.messages;
+    expect(msg.role).toBe("assistant");
+    expect(msg.status).toBe("streaming");
+    expect(msg.thinking).toBe("step one");
+    expect(msg.text).toBe("partial reply");
+    expect(msg.tools).toHaveLength(1);
+    expect(msg.tools![0]!.name).toBe("terminal");
+    expect(msg.tools![0]!.status).toBe("running");
+  });
+
+  it("updates an existing streaming message idempotently (no reseal, no duplicate)", () => {
+    const state = reduce([
+      ["message.start", {}],
+      [
+        "turn.snapshot",
+        {
+          thinking: "thinking",
+          tools: [{ tool_id: "t1", name: "terminal", status: "running" }],
+          assistant: "partial",
+          streaming: true,
+        },
+      ],
+      [
+        "turn.snapshot",
+        {
+          thinking: "thinking",
+          tools: [{ tool_id: "t1", name: "terminal", status: "complete", summary: "done", duration_s: 1.2 }],
+          assistant: "partial more",
+          streaming: true,
+        },
+      ],
+    ]);
+    expect(state.messages).toHaveLength(1);
+    const [msg] = state.messages;
+    expect(msg.tools).toHaveLength(1);
+    expect(msg.tools![0]!.status).toBe("complete");
+    expect(msg.tools![0]!.summary).toBe("done");
+    expect(msg.text).toBe("partial more");
+  });
+
+  it("ignores an empty snapshot", () => {
+    const state = reduce([["turn.snapshot", {}]]);
+    expect(state.messages).toHaveLength(0);
+  });
+
+  it("finalizes the message when snapshot reports streaming=false", () => {
+    const state = reduce([
+      [
+        "turn.snapshot",
+        { thinking: "t", tools: [{ tool_id: "t1", name: "terminal", status: "complete" }], assistant: "final", streaming: false },
+      ],
+    ]);
+    expect(state.messages).toHaveLength(1);
+    expect(state.messages[0]!.status).toBe("complete");
+  });
+
+  it("preserves interleaved segment order from an ordered snapshot", () => {
+    const state = reduce([
+      [
+        "turn.snapshot",
+        {
+          segments: [
+            { kind: "text", text: "先说一段" },
+            { kind: "tool", tool_id: "t1", name: "terminal", status: "running" },
+            { kind: "tool", tool_id: "t2", name: "read_file", status: "complete", summary: "ok" },
+            { kind: "text", text: "然后继续说" },
+          ],
+          streaming: true,
+        },
+      ],
+    ]);
+    expect(state.messages).toHaveLength(1);
+    const segs = state.messages[0]!.segments ?? [];
+    expect(segs.map((s) => s.kind)).toEqual(["text", "tool", "tool", "text"]);
+    expect((segs[0] as { text?: string }).text).toBe("先说一段");
+    expect((segs[1] as ToolSegment).toolId).toBe("t1");
+    expect((segs[1] as ToolSegment).status).toBe("running");
+    expect((segs[3] as { text?: string }).text).toBe("然后继续说");
+  });
+});
+
 describe("reasoning", () => {
   it("final message.complete uses streamed thinking and ignores reasoning when both present", () => {
     const state = reduce([
@@ -374,6 +470,23 @@ describe("sessionMessagesToChatMessages", () => {
     });
     expect(state.messages).toHaveLength(1);
     expect(state.messages[0]!.text).toBe("old");
+  });
+
+  it("orders segments text-first then tools (faithful to gateway row order)", () => {
+    const messages = sessionMessagesToChatMessages([
+      {
+        role: "assistant",
+        content: "先说一段话再调工具",
+        timestamp: 2,
+        tool_calls: [
+          { id: "tc1", function: { name: "read_file", arguments: "{}" } },
+        ],
+      },
+    ]);
+    expect(messages).toHaveLength(1);
+    const segs = messages[0]!.segments ?? [];
+    expect(segs.map((s) => s.kind)).toEqual(["text", "tool"]);
+    expect((segs[0] as { text?: string }).text).toBe("先说一段话再调工具");
   });
 });
 

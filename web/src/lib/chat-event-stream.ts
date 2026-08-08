@@ -734,6 +734,112 @@ export function chatEventStreamReducer(
       };
     }
 
+    case "turn.snapshot": {
+      // The dashboard polls the gateway's in-flight turn (~1.5s) and replays
+      // it here as one idempotent state frame — thinking + tool lifecycle +
+      // partial reply text — so a refresh / reconnect mid-turn, or a live tab
+      // whose realtime event feed is unavailable, still repaints progress.
+      // Unlike the live message.delta/tool.start stream, a snapshot REPLACES
+      // the in-flight message's segments in place (never seals/reopens), so
+      // repeated frames don't flicker.
+      const streaming = p.streaming !== false;
+      const segments: ChatSegment[] = [];
+
+      // Preferred: the gateway recorded an ORDERED segments list (true
+      // arrival order: text → tool → text → …). Rebuild it directly.
+      const rawSegs = Array.isArray(p.segments) ? p.segments : null;
+      if (rawSegs && rawSegs.length) {
+        for (const s of rawSegs) {
+          if (!s || typeof s !== "object") continue;
+          const kind = asString((s as Record<string, unknown>).kind);
+          if (kind === "text") {
+            const text = asString((s as Record<string, unknown>).text);
+            if (text) segments.push({ kind: "text" as const, text });
+          } else if (kind === "thinking") {
+            const text = asString((s as Record<string, unknown>).text);
+            if (text) segments.push({ kind: "thinking" as const, text });
+          } else if (kind === "tool") {
+            const t = s as Record<string, unknown>;
+            const toolId = asString(t.tool_id);
+            if (!toolId) continue;
+            const status =
+              t.status === "complete" || t.status === "error"
+                ? (t.status as ToolStatus)
+                : ("running" as ToolStatus);
+            const toolSeg: ToolSegment = {
+              kind: "tool",
+              toolId,
+              name: asString(t.name) || "tool",
+              status,
+            };
+            const argsText = asString(t.args_text);
+            if (argsText) toolSeg.argsText = truncateArgs(argsText);
+            const summary = asString(t.summary);
+            if (summary) toolSeg.summary = summary;
+            if (typeof t.duration_s === "number") toolSeg.durationS = t.duration_s;
+            const error = asString(t.error);
+            if (error) toolSeg.error = error;
+            segments.push(toolSeg);
+          }
+        }
+      }
+
+      // Fallback: flat thinking/tools/assistant snapshot (older gateway).
+      if (!segments.length) {
+        const thinking = asString(p.thinking);
+        const assistant = asString(p.assistant);
+        const rawTools = Array.isArray(p.tools) ? p.tools : null;
+        if (thinking) segments.push({ kind: "thinking" as const, text: thinking });
+        if (rawTools && rawTools.length) {
+          for (const t of rawTools) {
+            if (!t || typeof t !== "object") continue;
+            const toolId = asString((t as Record<string, unknown>).tool_id);
+            if (!toolId) continue;
+            const status =
+              (t as Record<string, unknown>).status === "complete" ||
+              (t as Record<string, unknown>).status === "error"
+                ? ((t as Record<string, unknown>).status as ToolStatus)
+                : ("running" as ToolStatus);
+            const toolSeg: ToolSegment = {
+              kind: "tool",
+              toolId,
+              name: asString((t as Record<string, unknown>).name) || "tool",
+              status,
+            };
+            const argsText = asString((t as Record<string, unknown>).args_text);
+            if (argsText) toolSeg.argsText = truncateArgs(argsText);
+            const summary = asString((t as Record<string, unknown>).summary);
+            if (summary) toolSeg.summary = summary;
+            if (typeof (t as Record<string, unknown>).duration_s === "number")
+              toolSeg.durationS = (t as Record<string, unknown>).duration_s as number;
+            const error = asString((t as Record<string, unknown>).error);
+            if (error) toolSeg.error = error;
+            segments.push(toolSeg);
+          }
+        }
+        if (assistant) segments.push({ kind: "text" as const, text: assistant });
+      }
+
+      if (!segments.length) return state;
+
+      const liveIdx = state.messages.findIndex(
+        (m) => m.role === "assistant" && m.status === "streaming",
+      );
+      const base = liveIdx >= 0 ? state : openStreamingMessage(state);
+      const targetIdx = liveIdx >= 0 ? liveIdx : base.messages.length - 1;
+      return {
+        ...base,
+        messages: base.messages.map((m, i) =>
+          i === targetIdx
+            ? withSegments(
+                { ...m, status: streaming ? ("streaming" as const) : ("complete" as const) },
+                segments,
+              )
+            : m,
+        ),
+      };
+    }
+
     default:
       // All meaningful events are handled explicitly above. Anything else is
       // internal noise (session.*, notification.*, moa.*, status.*,
@@ -820,9 +926,14 @@ export function sessionMessagesToChatMessages(
       out.push({ id: nextId(), role, text, status: "complete", ts });
       continue;
     }
-    // Assistant: fold tool_calls into tool segments (placed BEFORE the text
-    // segment — history has no exact order, so "tools first then reply" is the
-    // reasonable approximation); keep body text as a trailing text segment.
+    // Assistant: fold tool_calls into tool segments. History has no exact
+    // interleaving for a single DB row, but the gateway writes the reply
+    // text on the SAME assistant row that fired the tool call, and that text
+    // was streamed BEFORE the tool started — so "text first, then the tools
+    // it fired" is the faithful approximation (the reverse makes every
+    // refreshed transcript look like a pile of tool cards followed by a
+    // wall of text).
+    const body = text?.trim() || undefined;
     const toolSegs: ToolSegment[] = Array.isArray(m.tool_calls)
       ? (m.tool_calls as Array<Record<string, unknown>>)
           .filter((tc) => tc && typeof tc === "object")
@@ -837,10 +948,9 @@ export function sessionMessagesToChatMessages(
             };
           })
       : [];
-    const body = text?.trim() || undefined;
     const segments: ChatSegment[] = [
-      ...toolSegs,
       ...(body ? [{ kind: "text" as const, text: body }] : []),
+      ...toolSegs,
     ];
     out.push(
       withSegments({

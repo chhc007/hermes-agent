@@ -5384,6 +5384,8 @@ def _on_tool_start(sid: str, tool_call_id: str, name: str, args: dict):
         except Exception:
             pass
         session.setdefault("tool_started_at", {})[tool_call_id] = time.time()
+        args_text = _tool_args_text(args) if _session_verbose(sid) else ""
+        _record_inflight_tool_start(session, tool_call_id, name, args_text)
     if _tool_progress_enabled(sid) or _tool_lifecycle_required_for_ui(name):
         payload = {
             "tool_id": tool_call_id,
@@ -5417,6 +5419,13 @@ def _on_tool_complete(sid: str, tool_call_id: str, name: str, args: dict, result
     summary = _tool_summary(name, result, duration_s)
     if summary:
         payload["summary"] = summary
+    if session is not None:
+        _record_inflight_tool_complete(
+            session,
+            tool_call_id,
+            summary=str(summary or ""),
+            duration_s=duration_s,
+        )
     if _session_verbose(sid):
         result_text = _tool_result_text(result)
         if result_text:
@@ -5688,6 +5697,22 @@ def _mirror_subagent_to_child(event_type: str, payload: dict) -> None:
             _child_mirrors.pop(child_key, None)
 
 
+def _thinking_emit(sid: str, text: Any, *, reasoning: bool = False) -> None:
+    """Emit a thinking/reasoning delta AND accumulate it on the live turn.
+
+    The accumulated text is what a late subscriber (refresh / reconnect
+    mid-turn) replays to rebuild the thinking block; without it they see
+    nothing until the next delta.
+    """
+    session = _sessions.get(sid)
+    if session is not None:
+        _append_inflight_thinking(session, text)
+    payload: dict = {"text": str(text)}
+    if reasoning and _session_verbose(sid):
+        payload["verbose"] = True
+    _emit("reasoning.delta" if reasoning else "thinking.delta", sid, payload)
+
+
 def _agent_cbs(sid: str) -> dict:
     callbacks = {
         "tool_start_callback": lambda tc_id, name, args: _on_tool_start(
@@ -5701,15 +5726,11 @@ def _agent_cbs(sid: str) -> dict:
         ),
         "tool_gen_callback": lambda name: _tool_progress_enabled(sid)
         and _emit("tool.generating", sid, {"name": name}),
-        "thinking_callback": lambda text: _emit("thinking.delta", sid, {"text": text}),
+        "thinking_callback": lambda text: _thinking_emit(sid, text),
         # Affection reaction (ily / <3 / good bot) → hearts. Core-detected, so
         # the TUI heart and desktop floating hearts share one signal.
         "reaction_callback": lambda kind: _emit("reaction", sid, {"kind": kind}),
-        "reasoning_callback": lambda text: _emit(
-            "reasoning.delta",
-            sid,
-            {"text": text, **({"verbose": True} if _session_verbose(sid) else {})},
-        ),
+        "reasoning_callback": lambda text: _thinking_emit(sid, text, reasoning=True),
         "status_callback": lambda kind, text=None: _status_update(
             sid, str(kind), None if text is None else str(text)
         ),
@@ -7173,6 +7194,14 @@ def _start_inflight_turn(session: dict, text: Any) -> None:
         "streaming": True,
         "updated_at": now,
         "user": _inflight_text(text),
+        "thinking": "",
+        "tools": [],
+        # Ordered output segments (thinking / tool / text) in true arrival
+        # order. The flat assistant/thinking/tools fields stay for backward
+        # compat; segments is what a late subscriber needs to repaint the
+        # interleaved sequence (text → tool → text → …) instead of a
+        # flattened "all tools then all text" blob.
+        "segments": [],
     }
 
 
@@ -7182,11 +7211,121 @@ def _append_inflight_delta(session: dict, delta: Any) -> None:
         return
     turn = session.get("inflight_turn")
     if not isinstance(turn, dict):
-        turn = {"assistant": "", "streaming": True, "user": ""}
+        turn = {"assistant": "", "streaming": True, "user": "", "segments": []}
     turn["assistant"] = f"{turn.get('assistant') or ''}{text}"
+    segments = list(turn.get("segments") or [])
+    if segments and isinstance(segments[-1], dict) and segments[-1].get("kind") == "text":
+        segments[-1] = {
+            **segments[-1],
+            "text": f"{segments[-1].get('text') or ''}{text}",
+        }
+    else:
+        segments.append({"kind": "text", "text": text})
+    turn["segments"] = segments
     turn["streaming"] = True
     turn["updated_at"] = time.time()
     session["inflight_turn"] = turn
+
+
+def _append_inflight_thinking(session: dict, text: Any) -> None:
+    """Accumulate reasoning text on the live turn.
+
+    Mirrors ``_append_inflight_delta`` for the thinking channel: a late
+    subscriber (browser refresh / reconnect mid-turn) replays the accumulated
+    thinking block from ``session.resume`` / the events re-subscribe snapshot
+    instead of waiting for the next ``thinking.delta``.
+    """
+    text = "" if text is None else str(text)
+    if not text:
+        return
+    turn = session.get("inflight_turn")
+    if not isinstance(turn, dict):
+        return
+    turn["thinking"] = f"{turn.get('thinking') or ''}{text}"
+    segments = list(turn.get("segments") or [])
+    if segments and isinstance(segments[-1], dict) and segments[-1].get("kind") == "thinking":
+        segments[-1] = {
+            **segments[-1],
+            "text": f"{segments[-1].get('text') or ''}{text}",
+        }
+    else:
+        segments.append({"kind": "thinking", "text": text})
+    turn["segments"] = segments
+    turn["updated_at"] = time.time()
+    session["inflight_turn"] = turn
+
+
+def _record_inflight_tool_start(session: dict, tool_id: str, name: str, args_text: str) -> None:
+    """Record a running tool on the live turn (replay for late subscribers)."""
+    turn = session.get("inflight_turn")
+    if not isinstance(turn, dict):
+        return
+    entry = {
+        "tool_id": tool_id,
+        "name": name,
+        "args_text": args_text,
+        "status": "running",
+    }
+    tools = list(turn.get("tools") or [])
+    tools.append(entry)
+    turn["tools"] = tools
+    segments = list(turn.get("segments") or [])
+    segments.append({"kind": "tool", **entry})
+    turn["segments"] = segments
+    turn["updated_at"] = time.time()
+    session["inflight_turn"] = turn
+
+
+def _record_inflight_tool_complete(
+    session: dict,
+    tool_id: str,
+    *,
+    error: str = "",
+    summary: str = "",
+    duration_s: float | None = None,
+) -> None:
+    """Mark a recorded tool finished on the live turn."""
+    turn = session.get("inflight_turn")
+    if not isinstance(turn, dict) or not isinstance(turn.get("tools"), list):
+        return
+    tools = []
+    changed = False
+    for t in turn["tools"]:
+        if not isinstance(t, dict) or t.get("tool_id") != tool_id:
+            tools.append(t)
+            continue
+        t = dict(t)
+        t["status"] = "error" if error else "complete"
+        if error:
+            t["error"] = error
+        if summary:
+            t["summary"] = summary
+        if duration_s is not None:
+            t["duration_s"] = duration_s
+        tools.append(t)
+        changed = True
+    if changed:
+        turn["tools"] = tools
+        segments = list(turn.get("segments") or [])
+        seg_changed = False
+        for i in range(len(segments) - 1, -1, -1):
+            seg = segments[i]
+            if isinstance(seg, dict) and seg.get("kind") == "tool" and seg.get("tool_id") == tool_id:
+                updated = dict(seg)
+                updated["status"] = "error" if error else "complete"
+                if error:
+                    updated["error"] = error
+                if summary:
+                    updated["summary"] = summary
+                if duration_s is not None:
+                    updated["duration_s"] = duration_s
+                segments[i] = updated
+                seg_changed = True
+                break
+        if seg_changed:
+            turn["segments"] = segments
+        turn["updated_at"] = time.time()
+        session["inflight_turn"] = turn
 
 
 def _record_inflight_correction(session: dict, text: Any) -> None:
@@ -7654,6 +7793,15 @@ def _inflight_snapshot(session: dict) -> dict | None:
         "streaming": streaming,
         "user": user,
     }
+    thinking = str(turn.get("thinking") or "")
+    if thinking:
+        snapshot["thinking"] = thinking
+    tools = turn.get("tools")
+    if isinstance(tools, list) and tools:
+        snapshot["tools"] = tools
+    segments = turn.get("segments")
+    if isinstance(segments, list) and segments:
+        snapshot["segments"] = segments
     corrections = [c for c in (turn.get("corrections") or []) if str(c).strip()]
     if corrections:
         # Mid-turn redirects. Carried alongside the original prompt (not over

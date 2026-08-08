@@ -279,6 +279,47 @@ text 段后面出现 tool 后它不会再增长，定型是安全的。）
 **测试**：`MessageBubble.test.tsx` 新增 "finalizes the pre-tool text as markdown
 while the tool is still running"。
 
+### 实时进度轮询 + 幂等快照（v1.7.8）
+
+**问题**：① 实时事件流（TUI sidecar mirror → /api/pub）在部分环境下不工作，
+工具卡片/thinking/流式文字实时不可见，用户只能刷新看结果；② 刷新时旧补发
+（message.start + delta 序列）与 REST 历史加载竞态，导致已格式化的 MD 和工具
+块乱掉。
+
+**根因**：
+- 实时链路：tui_gateway 事件 → PTY stdio → node TUI（attach 模式走 WS）→
+  sidecar mirror → /api/pub → /api/events。实测 TUI mirror 未发布（/api/pub 空），
+  属原有环境问题，非本次功能引入
+- 刷新竞态：message.start 的 sealAll + REST history 替换互相覆盖
+
+**修复**：
+- 前端 reducer 新增 `turn.snapshot` 事件：**幂等替换**进行中消息的 segments
+  （thinking + tools + text），不 seal 不重开 → 重复帧不闪烁、不与历史竞态
+- 后端 events_ws 改为**轮询** inflight_turn 快照（1.5s），内容变化时推送
+  `turn.snapshot`；回合结束（inflight 变空）推 `message.complete` 收尾
+- 订阅时仍立即补发一次 snapshot（刷新/重连恢复进行中状态）
+
+**验证**：`tests/tui_gateway/test_inflight_replay.py`（8）+ `test_web_server.py`
+新增 snapshot 帧测试；前端 `chat-event-stream.test.ts` 新增 4 个 turn.snapshot 用例；
+后端 163 + 前端 354 全绿。
+
+### 刷新后顺序修复（v1.7.9）
+
+**问题**：刷新后工具块挤成一堆、文本全部连在下面。两个来源：
+1. **补发快照丢失顺序**：inflight_turn 用扁平的 `tools[]` + `assistant` 分开存，
+   snapshot 还原成"全部工具 + 一段文本"，真实交织顺序（文本→工具→文本→…）丢失
+2. **历史近似顺序反了**：`sessionMessagesToChatMessages` 把 tool_calls 放在文本前，
+   但 DB 行实际是"先输出文本、再发起工具"——渲染成工具卡片堆 + 文本墙
+
+**修复**：
+- `inflight_turn` 新增**有序 `segments` 列表**（thinking/tool/text 按到达顺序记录，
+  thinking/text 增量合并到末尾同类段，工具 start/complete 追加/更新段）
+- `turn.snapshot` 优先透传有序 segments；旧扁平字段作兼容回退
+- 历史转换改为**文本先、工具后**（符合 DB 行的真实写入顺序）
+
+**验证**：`test_inflight_replay.py` 断言更新（snapshot 含 segments）；前端新增
+"text→tool→text 顺序保持"用例；后端 500 + 前端 356 全绿。
+
 ### 后端改动（唯一一处）
 
 `hermes_cli/web_server.py` 的 `/api/media`：
