@@ -28,6 +28,8 @@ function init(messages: ChatEventStreamState["messages"] = []): ChatEventStreamS
     sessionTitle: null,
     activeSessionId: null,
     clarify: null,
+    usage: null,
+    compacting: false,
   };
 }
 
@@ -557,5 +559,138 @@ describe("reset (fresh chat / channel change)", () => {
   it("reset is safe on an empty initial state", () => {
     const reset = chatEventStreamReducer(createInitialState(), { type: "reset" });
     expect(reset).toEqual(createInitialState());
+  });
+});
+
+describe("session switch (TUI-internal /resume, /sessions, /compact key rotation)", () => {
+  it("clears stale messages when session.info reports a different stored_session_id", () => {
+    const before = reduce([
+      ["session.info", { title: "Session A", stored_session_id: "sess-a" }],
+      ["message.start", {}],
+      ["message.delta", { text: "answer in A" }],
+      ["message.complete", { text: "" }],
+    ]);
+    expect(before.messages.length).toBeGreaterThan(0);
+
+    const after = chatEventStreamReducer(before, {
+      type: "event",
+      eventType: "session.info",
+      payload: { title: "Session B", stored_session_id: "sess-b" },
+    });
+
+    expect(after.activeSessionId).toBe("sess-b");
+    // Stale bubbles from the previous session must NOT survive the switch.
+    expect(after.messages).toEqual([]);
+    expect(after.clarify).toBeNull();
+  });
+
+  it("keeps messages when session.info repeats the same stored_session_id", () => {
+    const state = reduce([
+      ["session.info", { title: "Session A", stored_session_id: "sess-a" }],
+      ["message.start", {}],
+      ["message.delta", { text: "answer in A" }],
+      ["message.complete", { text: "" }],
+      ["session.info", { title: "Session A", stored_session_id: "sess-a" }],
+    ]);
+    expect(state.activeSessionId).toBe("sess-a");
+    expect(state.messages.length).toBeGreaterThan(0);
+  });
+
+  it("does not clear messages when stored_session_id is absent (fresh chat)", () => {
+    const state = reduce([
+      ["session.info", { title: "Fresh", stored_session_id: "sess-a" }],
+      ["message.start", {}],
+      ["message.delta", { text: "hi" }],
+      ["message.complete", { text: "" }],
+      ["session.info", { title: "Fresh" }],
+    ]);
+    expect(state.activeSessionId).toBe("sess-a");
+    expect(state.messages.length).toBeGreaterThan(0);
+  });
+});
+
+describe("context usage (session.info.usage)", () => {
+  it("captures usage from a session.info frame", () => {
+    const state = reduce([
+      [
+        "session.info",
+        {
+          title: "S",
+          stored_session_id: "sess-1",
+          usage: {
+            context_used: 42_000,
+            context_max: 128_000,
+            context_percent: 33,
+            compressions: 2,
+            total: 55_000,
+          },
+        },
+      ],
+    ]);
+    expect(state.usage).toEqual({
+      context_used: 42_000,
+      context_max: 128_000,
+      context_percent: 33,
+      compressions: 2,
+      total: 55_000,
+    });
+  });
+
+  it("keeps previous usage when a session.info frame has no usage", () => {
+    const first = reduce([
+      [
+        "session.info",
+        { title: "S", stored_session_id: "sess-1", usage: { total: 10 } },
+      ],
+    ]);
+    const second = chatEventStreamReducer(first, {
+      type: "event",
+      eventType: "session.info",
+      payload: { title: "S", stored_session_id: "sess-1" },
+    });
+    expect(second.usage).toEqual({ total: 10 });
+  });
+});
+
+describe("compaction status (status.update compacting/compressing)", () => {
+  it("sets compacting on kind=compressing", () => {
+    const state = reduce([
+      ["status.update", { kind: "compressing", text: "⠋ compressing 120 messages…" }],
+    ]);
+    expect(state.compacting).toBe(true);
+  });
+
+  it("sets compacting on kind=compacting (auto-compaction)", () => {
+    const state = reduce([
+      ["status.update", { kind: "compacting", text: "🗜️ Compacting context…" }],
+    ]);
+    expect(state.compacting).toBe(true);
+  });
+
+  it("clears compacting on kind=ready", () => {
+    const state = reduce([
+      ["status.update", { kind: "compressing", text: "…" }],
+      ["status.update", { kind: "ready" }],
+    ]);
+    expect(state.compacting).toBe(false);
+  });
+
+  it("ignores unrelated status.update kinds", () => {
+    const state = reduce([
+      ["status.update", { kind: "working", text: "working…" }],
+    ]);
+    expect(state.compacting).toBe(false);
+  });
+});
+
+describe("parseEventFrame session_id", () => {
+  it("extracts session_id from a frame", () => {
+    const frame = parseEventFrame(buildEventFrame("session.info", {}, "e71bf884"));
+    expect(frame).toEqual({ type: "session.info", payload: {}, sessionId: "e71bf884" });
+  });
+
+  it("leaves sessionId undefined when absent", () => {
+    const frame = parseEventFrame(buildEventFrame("tool.start", { tool_id: "1" }));
+    expect(frame?.sessionId).toBeUndefined();
   });
 });

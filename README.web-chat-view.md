@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.5-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.5">
+  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.6-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.6">
   <img src="https://img.shields.io/badge/状态-稳定-green?style=for-the-badge" alt="Status: stable">
-  <img src="https://img.shields.io/badge/测试-326%20passed-22c55e?style=for-the-badge" alt="Tests: 326 passed">
+  <img src="https://img.shields.io/badge/测试-337%20passed-22c55e?style=for-the-badge" alt="Tests: 337 passed">
   <img src="https://img.shields.io/badge/后端-479%20passed-22c55e?style=for-the-badge" alt="Backend tests: 479 passed">
 </p>
 
@@ -40,6 +40,9 @@
 | 📶 **会话排序切换** | 会话列表支持「最近活跃 / 创建时间」两种排序（后端 `order` 参数已支持，前端切换即时重拉） |
 | 🕐 **消息时间戳** | 每条消息（用户/助手/系统气泡）显示发送时间 `YYYY-MM-DD HH:mm:ss`，兼容秒/毫秒时间戳 |
 | 🧒 **子代理会话标记** | 列表包含子代理会话（`include_children`）并显示「子代理」徽标（`_delegate_from` 标记识别），当前对话即使由 delegate 生成也能看到并选中 |
+| 🔁 **终端切会话同步** | TUI 内 `/resume`、`/sessions`、`/compact`（session key 旋转）后气泡自动清空旧消息并重拉新会话历史，与终端保持一致（v1.6） |
+| 📊 **上下文使用量** | 消息列表顶部显示 context 用量条（`used/max tok` + 填充条）+ 压缩次数徽标，数据来自 `session.info.usage`（v1.6） |
+| 🗜️ **压缩兼容** | `/compact`/`/compress` 时显示「正在压缩上下文」banner（`status.update` kind=compacting/compressing），压缩后用量/历史自动刷新（v1.6） |
 | 🇨🇳 **完整汉化** | zh 翻译补全（63 key，不再 fallback 英文）+ 默认语言中文（浏览器 `zh*` 自动识别，localStorage 手动选择优先）+ Chat 核心组件全 i18n（输入框/气泡/澄清/媒体） |
 
 ---
@@ -428,7 +431,17 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.5**（当前，稳定）：**会话切换脱节修复** — 侧边栏切会话「气泡加载历史但终端
+- **v1.6**（当前，稳定）：**终端会话同步 + 上下文用量/压缩兼容** —
+  1) **内部切会话同步**：TUI 内 `/resume`、`/sessions`、`/compact`（session key
+  旋转）后，`session.info` 携带新 `stored_session_id`，气泡 reducer 检测到
+  会话切换即清空旧消息，ChatPage 自动重拉该会话历史（不 rewrite URL resume，
+  避免 channel 旋转导致 PTY 重连）；2) **上下文使用量**：解析
+  `session.info.usage`（context_used/max/percent/compressions），新增
+  `ChatUsageBar` 组件显示用量条 + 压缩次数；3) **压缩兼容**：`status.update`
+  kind=compacting/compressing 驱动「正在压缩上下文」banner，聊天框发
+  `/compact` 立即显示；4) `parseEventFrame` 提取帧级 `session_id`（供会话
+  边界识别）。见上方「AI 架构说明」与「故障排查」。
+- **v1.5**：**会话切换脱节修复** — 侧边栏切会话「气泡加载历史但终端
   是新对话、打字无效」双 bug 修复：前端 `fresh=1` 与 `resume` 互斥 + 同步 rotate
   attach token（杜绝幽灵 PTY 同 channel 双发）；后端 attach 复用前校验
   active_session_file 实际会话（`_live_sid_matches_resume`，兼容存储 id/短 id 两种

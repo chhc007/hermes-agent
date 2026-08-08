@@ -193,6 +193,9 @@ export const zhHant: Translations = {
     answerPlaceholder: "Type your answer…",
     mediaPreview: "media preview",
     closePreview: "Close preview",
+    contextUsageTitle: "上下文視窗使用量",
+    compressionsTitle: "上下文壓縮次數",
+    compactingMessage: "正在壓縮上下文…",
   },
 
   analytics: {

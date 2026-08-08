@@ -226,6 +226,9 @@ export interface Translations {
     answerPlaceholder: string;
     mediaPreview: string;
     closePreview: string;
+    contextUsageTitle: string;
+    compressionsTitle: string;
+    compactingMessage: string;
   };
 
   // ── Analytics page ──

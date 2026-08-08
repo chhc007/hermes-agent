@@ -25,7 +25,7 @@ import "@xterm/xterm/css/xterm.css";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Typography } from "@nous-research/ui/ui/components/typography/index";
 import { cn } from "@/lib/utils";
-import { Copy, PanelRight, RotateCcw, X } from "lucide-react";
+import { Copy, Loader2, PanelRight, RotateCcw, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -42,6 +42,7 @@ import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
 import { ChatInput, type ChatInputHandle } from "@/components/ChatInput";
 import { ChatMessageList } from "@/components/ChatMessageList";
+import { ChatUsageBar } from "@/components/ChatUsageBar";
 import { ClarifyCard } from "@/components/ClarifyCard";
 import { SlashPopover, type SlashPopoverHandle } from "@/components/SlashPopover";
 import { GatewayClient } from "@/lib/gatewayClient";
@@ -403,6 +404,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const addSystemMessageRef = useRef(chatStream.addSystemMessage);
   const loadHistoryRef = useRef(chatStream.loadHistory);
   const respondClarifyRef = useRef(chatStream.respondClarify);
+  const setCompactingRef = useRef(chatStream.setCompacting);
   // Stable refs for the async handlers below — sendUserMessage/loadHistory are stable.
   useEffect(() => {
     sendUserMessageRef.current = chatStream.sendUserMessage;
@@ -410,7 +412,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     loadHistoryRef.current = chatStream.loadHistory;
     respondClarifyRef.current = chatStream.respondClarify;
     resetChatRef.current = chatStream.resetChat;
-  }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify, chatStream.resetChat]);
+    setCompactingRef.current = chatStream.setCompacting;
+  }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify, chatStream.resetChat, chatStream.setCompacting]);
 
   // Slash-command completion: the composer text flows up to the popover via
   // onInputChange, and keys are forwarded through onCompletionKey. The
@@ -556,6 +559,35 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     };
   }, [resumeParam, scopedProfile]);
 
+  // Follow TUI-internal session switches (`/resume <id>`, `/sessions` picker,
+  // `/compact` rotating the session key): when the live stream reports a new
+  // stored_session_id that differs from our URL resume target, reload that
+  // session's stored history so the bubble view tracks the terminal. We
+  // deliberately do NOT rewrite the URL resume param here — doing so would
+  // rotate the channel and force a PTY reconnect; the live PTY keeps feeding
+  // this channel, so history reload + the ongoing event stream are enough.
+  useEffect(() => {
+    const liveId = chatStream.activeSessionId;
+    if (!liveId) return;
+    if (liveId === resumeParam) return; // resume effect already loaded it
+
+    let cancelled = false;
+
+    api
+      .getSessionMessages(liveId, scopedProfile)
+      .then((res) => {
+        if (cancelled) return;
+        loadHistoryRef.current(sessionMessagesToChatMessages(res.messages));
+      })
+      .catch(() => {
+        // Best-effort — live events will still populate the view.
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatStream.activeSessionId, resumeParam, scopedProfile]);
+
   useEffect(() => {
     if (!resumeParam) return;
 
@@ -689,6 +721,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       }, 100);
       const trimmed = (text ?? "").trim();
       if (trimmed.startsWith("/") && isTerminalOnlyCommand(trimmed)) {
+        // /compact (or /compress) rotates the session key server-side and
+        // emits status.update → session.info with fresh usage. Show the
+        // compacting banner immediately (not only when the status event
+        // arrives) so the user sees the context is being condensed.
+        const cmd = trimmed.replace(/^\/+/, "").split(/\s+/)[0]?.toLowerCase();
+        if (cmd === "compact" || cmd === "compress") {
+          setCompactingRef.current?.(true);
+        }
         addSystemMessageRef.current?.(
           "此命令需在 Terminal 视图执行 — 已发送到终端，可切换到 Terminal 查看输出。",
         );
@@ -1829,6 +1869,16 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               data-chat-surface
               className="flex min-h-0 flex-1 flex-col gap-2"
             >
+              <div className="flex shrink-0 items-center justify-between px-1">
+                <ChatUsageBar usage={chatStream.usage} />
+                <div className="flex-1" />
+              </div>
+              {chatStream.compacting && (
+                <div className="flex shrink-0 items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning">
+                  <Loader2 className="size-3.5 animate-spin" />
+                  {t.chat.compactingMessage ?? "Compacting context…"}
+                </div>
+              )}
               <ChatMessageList messages={chatStream.messages} className="rounded-md" />
               {chatStream.clarify && (
                 <ClarifyCard

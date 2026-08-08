@@ -83,6 +83,28 @@ export interface ChatMessage {
 
 export type ConnectionState = "connecting" | "open" | "closed" | "error";
 
+/** Live context-window usage, mirrored from `session.info.usage` (see
+ *  `tui_gateway/server.py::_get_usage`). Only fields the chat bubble view
+ *  surfaces are typed here; extra backend fields pass through untouched. */
+export interface ChatUsage {
+  /** Tokens currently occupying the context window (0/absent = unknown). */
+  context_used?: number;
+  /** Total context window capacity in tokens (0/absent = no gauge). */
+  context_max?: number;
+  /** 0–100 fill percentage, clamped server-side. */
+  context_percent?: number;
+  /** Number of times the context has been compressed this session. */
+  compressions?: number;
+  /** Cumulative input tokens. */
+  input?: number;
+  /** Cumulative output tokens. */
+  output?: number;
+  /** Cumulative total tokens. */
+  total?: number;
+  /** Number of API calls this session. */
+  calls?: number;
+}
+
 /** Pending clarify (multi-choice) request surfaced by the agent. */
 export interface ClarifyRequest {
   requestId: string;
@@ -100,16 +122,23 @@ export interface ChatEventStreamState {
    *  to highlight the active row in the session list even for fresh chats. */
   activeSessionId: string | null;
   clarify: ClarifyRequest | null;
+  /** Live context-window usage (from `session.info` `usage`). Null until the
+   *  first session.info frame. Drives the context bar in the chat surface. */
+  usage: ChatUsage | null;
+  /** True while the agent is compressing the context (`status.update` with
+   *  kind "compacting"/"compressing"). Surfaced as a banner in chat view. */
+  compacting: boolean;
 }
 
 export type ChatEventStreamAction =
   | { type: "reset" }
-  | { type: "event"; eventType: string; payload: unknown }
+  | { type: "event"; eventType: string; payload: unknown; sessionId?: string }
   | { type: "connection"; connectionState: ConnectionState; error?: string | null }
   | { type: "user_message"; text: string }
   | { type: "system_message"; text: string }
   | { type: "history"; messages: ChatMessage[] }
-  | { type: "clarify_answered" };
+  | { type: "clarify_answered" }
+  | { type: "compacting"; compacting: boolean };
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -230,6 +259,8 @@ export function createInitialState(): ChatEventStreamState {
     sessionTitle: null,
     activeSessionId: null,
     clarify: null,
+    usage: null,
+    compacting: false,
   };
 }
 
@@ -247,6 +278,13 @@ export function chatEventStreamReducer(
       connectionState: action.connectionState,
       error: action.error ?? state.error,
     };
+  }
+
+  // Local compacting state (banner) — driven by status.update events via the
+  // event action below, or set imperatively by the host when it issues a
+  // session.compress RPC directly (so the banner appears immediately).
+  if (action.type === "compacting") {
+    return { ...state, compacting: action.compacting };
   }
 
   // Locally-optimistic user message: /api/events carries no user-input
@@ -297,12 +335,50 @@ export function chatEventStreamReducer(
   const idx = lastAssistantIndex(state);
 
   switch (eventType) {
-    case "session.info":
+    case "session.info": {
+      // A session.info frame can arrive with a NEW stored_session_id when the
+      // TUI switches sessions internally (e.g. `/resume <id>`, `/sessions`,
+      // `/compact` rotating the session key). The bubble view must NOT keep
+      // rendering the previous session's messages — clear the list so live
+      // events from the newly-focused session start on a clean slate. The host
+      // re-loads stored history via the REST API (see ChatPage's
+      // activeSessionId watcher), so clearing here is safe for resume flows.
+      const nextSessionId = asString(p.stored_session_id) ?? state.activeSessionId;
+      const switched = Boolean(
+        nextSessionId &&
+          state.activeSessionId &&
+          nextSessionId !== state.activeSessionId,
+      );
+      const usage =
+        p.usage && typeof p.usage === "object"
+          ? (p.usage as ChatUsage)
+          : state.usage;
       return {
         ...state,
         sessionTitle: asString(p.title) ?? state.sessionTitle,
-        activeSessionId: asString(p.stored_session_id) ?? state.activeSessionId,
+        activeSessionId: nextSessionId,
+        usage,
+        // Clear stale messages on an internal session switch (live events for
+        // the new session will re-populate; history is re-fetched by host).
+        messages: switched ? [] : state.messages,
+        clarify: switched ? null : state.clarify,
       };
+    }
+
+    // Compact / auto-compaction status. The gateway re-tags lifecycle
+    // compaction statuses as "compacting" (server.py::_status_update) and
+    // manual /compress emits "compressing" (methods_session.py). Both drive
+    // the in-chat banner; "ready" (or any other kind) clears it.
+    case "status.update": {
+      const kind = asString(p.kind);
+      if (kind === "compacting" || kind === "compressing") {
+        return { ...state, compacting: true };
+      }
+      if (kind === "ready") {
+        return { ...state, compacting: false };
+      }
+      return state;
+    }
 
     case "clarify.request": {
       const requestId = asString(p.request_id);
@@ -521,6 +597,10 @@ export function chatEventStreamReducer(
 export interface EventFrame {
   type: string;
   payload: unknown;
+  /** The gateway session id the frame belongs to (from `params.session_id`).
+   *  Lets the chat surface detect internal TUI session switches that arrive
+   *  on the same channel. */
+  sessionId?: string;
 }
 
 /** Parse a single ``/api/events`` frame, or null for non-event frames. */
@@ -537,15 +617,18 @@ export function parseEventFrame(raw: string): EventFrame | null {
   const params = obj.params as Record<string, unknown>;
   const type = typeof params.type === "string" ? params.type : "";
   if (!type) return null;
-  return { type, payload: params.payload };
+  const sessionId = typeof params.session_id === "string" ? params.session_id : undefined;
+  return { type, payload: params.payload, sessionId };
 }
 
 /** Build a wire frame string for tests. */
-export function buildEventFrame(type: string, payload?: unknown): string {
+export function buildEventFrame(type: string, payload?: unknown, sessionId?: string): string {
+  const params: Record<string, unknown> = { type, payload };
+  if (sessionId) params.session_id = sessionId;
   return JSON.stringify({
     jsonrpc: "2.0",
     method: "event",
-    params: { type, payload },
+    params,
   });
 }
 
@@ -636,6 +719,8 @@ export function useChatEventStream(channel: string) {
     sessionTitle: null,
     activeSessionId: null,
     clarify: null,
+    usage: null,
+    compacting: false,
   }));
 
   // Composer hook: locally append the user's own bubble (the /api/events
@@ -686,6 +771,13 @@ export function useChatEventStream(channel: string) {
     dispatch({ type: "reset" });
   }, []);
 
+  // Imperatively toggle the compacting banner — used when the host issues a
+  // session.compress RPC directly (the status.update event usually arrives,
+  // but setting it locally makes the banner appear instantly).
+  const setCompacting = useCallback((compacting: boolean) => {
+    dispatch({ type: "compacting", compacting });
+  }, []);
+
   useEffect(() => {
     if (!channel) return;
     let disposed = false;
@@ -720,7 +812,12 @@ export function useChatEventStream(channel: string) {
               socket.addEventListener("message", (ev) => {
                 const frame = parseEventFrame(String(ev.data));
                 if (frame) {
-                  dispatch({ type: "event", eventType: frame.type, payload: frame.payload });
+                  dispatch({
+                    type: "event",
+                    eventType: frame.type,
+                    payload: frame.payload,
+                    sessionId: frame.sessionId,
+                  });
                 }
               });
               socket.addEventListener("error", () => {
@@ -774,5 +871,6 @@ export function useChatEventStream(channel: string) {
     loadHistory,
     respondClarify,
     resetChat,
+    setCompacting,
   };
 }

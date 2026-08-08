@@ -193,6 +193,9 @@ export const ga: Translations = {
     answerPlaceholder: "Type your answer…",
     mediaPreview: "media preview",
     closePreview: "Close preview",
+    contextUsageTitle: "Context window usage",
+    compressionsTitle: "Context compressions",
+    compactingMessage: "Compacting context…",
   },
 
   analytics: {

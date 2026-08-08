@@ -206,6 +206,9 @@ export const zh: Translations = {
     answerPlaceholder: "输入你的回答…",
     mediaPreview: "媒体预览",
     closePreview: "关闭预览",
+    contextUsageTitle: "上下文窗口使用量",
+    compressionsTitle: "上下文压缩次数",
+    compactingMessage: "正在压缩上下文…",
   },
 
   analytics: {
