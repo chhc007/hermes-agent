@@ -2340,7 +2340,19 @@ def _start_agent_build(sid: str, session: dict) -> None:
 
 
 def _sess_nowait(params, rid):
-    s = _sessions.get(params.get("session_id") or "")
+    sid = str(params.get("session_id") or "")
+    s = _sessions.get(sid)
+    if s is None and sid:
+        # Stored-key fallback: some clients (e.g. the dashboard chat surface)
+        # may hold the durable session key (`20260808_...`) rather than the
+        # gateway's short sid. Resolve it to the live session so RPCs like
+        # session.interrupt / session.undo / session.usage work regardless of
+        # which id shape the caller has.
+        with _sessions_lock:
+            for cand_sid, cand in list(_sessions.items()):
+                if (cand.get("session_key") or "") == sid:
+                    s = cand
+                    break
     return (s, None) if s else (None, _err(rid, 4001, "session not found"))
 
 

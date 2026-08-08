@@ -15277,19 +15277,31 @@ def _build_replayed_session_info_frame(app, channel: str) -> Optional[str]:
         from tui_gateway import server as _tg  # lazy: dashboard-embedded only
 
         path = _active_session_file_for_channel(app, channel)
-        sid = _read_active_session_file(path)
-        if not sid:
+        file_sid = _read_active_session_file(path)
+        if not file_sid:
             return None
+        # Resolve the REAL gateway sid (the `_sessions` key — a short id like
+        # `e71bf884`). The active-session file may hold the durable stored key
+        # (`20260808_...`), but the gateway keys live sessions by short sid —
+        # and the TUI's own event frames use that short sid too. If we replayed
+        # the stored key as `session_id`, the browser would cache it as the
+        # frame sid and later RPCs (session.interrupt / session.undo) would
+        # fail with "session not found". Track the gateway key explicitly.
+        gateway_sid: Optional[str] = None
         with _tg._sessions_lock:
-            session = _tg._sessions.get(sid)
-        if session is None:
-            # Stored-key path: the file may hold a durable id while the gateway
-            # keys by short sid — search live sessions for the matching key.
-            for cand in list(_tg._sessions.values()):
-                if (cand.get("session_key") or "") == sid:
-                    session = cand
-                    break
-        if session is None:
+            session = _tg._sessions.get(file_sid)
+            if session is not None:
+                gateway_sid = file_sid
+            else:
+                # Stored-key path: the file holds a durable id while the
+                # gateway keys by short sid — search live sessions for the
+                # matching key and recover its short sid.
+                for cand_sid, cand in list(_tg._sessions.items()):
+                    if (cand.get("session_key") or "") == file_sid:
+                        session = cand
+                        gateway_sid = cand_sid
+                        break
+        if session is None or gateway_sid is None:
             return None
         agent = session.get("agent")
         if agent is None and not _tg._metadata_mirror(session):
@@ -15301,7 +15313,7 @@ def _build_replayed_session_info_frame(app, channel: str) -> Optional[str]:
                 "method": "event",
                 "params": {
                     "type": "session.info",
-                    "session_id": sid,
+                    "session_id": gateway_sid,
                     "payload": info,
                 },
             },
