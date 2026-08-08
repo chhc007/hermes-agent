@@ -1979,28 +1979,19 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               className="flex min-h-0 flex-1 flex-col gap-2"
             >
               <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1">
-                <div className="flex min-w-0 flex-1 items-center gap-2">
-                  <ChatUsageBar usage={chatStream.usage} className="min-w-0 px-1 sm:px-3" />
-                  {/* Phone: compact strip (busy + model, model tappable). */}
-                  <SessionStatusBar
-                    meta={chatStream.meta}
-                    subagents={chatStream.subagents}
-                    sessionStartedAt={chatStream.sessionStartedAt}
-                    bgCount={bgCount}
-                    compact
-                    onModelClick={() => setModelPickerOpen(true)}
-                    className="flex min-w-0 md:hidden"
-                  />
-                  {/* Desktop: full strip; the model segment is also tappable. */}
-                  <SessionStatusBar
-                    meta={chatStream.meta}
-                    subagents={chatStream.subagents}
-                    sessionStartedAt={chatStream.sessionStartedAt}
-                    bgCount={bgCount}
-                    onModelClick={() => setModelPickerOpen(true)}
-                    className="hidden md:flex"
-                  />
-                </div>
+                {/* Row 1 (phone) / inline (desktop): usage bar */}
+                <ChatUsageBar usage={chatStream.usage} className="min-w-0 px-1 sm:px-3" />
+                {/* Full status strip — on phones this wraps to its own second
+                    row so every segment (model/cwd/subagent/bg/duration) stays
+                    visible; on desktop it sits inline next to the usage bar. */}
+                <SessionStatusBar
+                  meta={chatStream.meta}
+                  subagents={chatStream.subagents}
+                  sessionStartedAt={chatStream.sessionStartedAt}
+                  bgCount={bgCount}
+                  onModelClick={() => setModelPickerOpen(true)}
+                  className="order-last w-full min-w-0 md:order-none md:w-auto md:flex-1"
+                />
                 <div className="ml-auto flex shrink-0 items-center gap-1">
                   <button
                     type="button"
