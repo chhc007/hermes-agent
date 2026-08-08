@@ -81,6 +81,27 @@ customCSS: |
     background-attachment: fixed !important;
   }
 
+  /* 亮色聊天区（气泡视图）：Win11 亮色 Mica 质感。
+     作用域变量覆盖 —— 只影响 [data-chat-surface] 内部，终端/侧栏保持深色。
+     Tailwind v4 @theme inline 把 utility 内联为 color-mix(... var(--midground-base)
+     / var(--background-base))，因此覆盖这三个底层变量即可整体翻转。 */
+  [data-chat-surface] {
+    --midground: #2b2440;              /* 文字：深紫灰 */
+    --midground-base: #2b2440;
+    --background: #f7f5fc;             /* 聊天区背景：亮紫白 */
+    --background-base: #f7f5fc;
+    --text-secondary: #6b6488;         /* DS 次级文字 */
+    --text-tertiary: #8a84a8;          /* DS 三级文字 */
+    background-color: #f7f5fc;
+    border-radius: 0.5rem;
+  }
+
+  /* 亮底上加深状态色（text-success 等编译为固定值，需选择器覆盖） */
+  [data-chat-surface] .text-success { color: #16a34a; }
+  [data-chat-surface] .text-warning { color: #b45309; }
+  [data-chat-surface] .bg-success\/15 { background-color: rgba(22, 163, 74, 0.15); }
+  [data-chat-surface] .bg-warning\/10 { background-color: rgba(180, 83, 9, 0.12); }
+
   /* 侧栏 / 导航区略带 Mica 通透感 */
   [data-layout-variant="standard"] aside,
   [data-layout-variant="standard"] nav {

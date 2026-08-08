@@ -376,6 +376,8 @@ grep "pty resume drift" ~/.hermes/logs/gui.log
 
 **Win11 Purple** — Windows 11 Fluent 风格深色主题：Mica 材质深紫背景、
 紫罗兰强调色（`#8B5CF6`）、半透明卡片 + 柔和阴影、17px 护眼大字体。
+**气泡聊天区为亮色**（`data-chat-surface` 作用域变量覆盖）：亮紫白背景 +
+深紫灰文字，终端/侧栏保持深色。
 
 ```bash
 # 安装（官方路径）

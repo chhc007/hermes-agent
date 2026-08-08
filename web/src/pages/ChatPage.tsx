@@ -1825,7 +1825,10 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
           </div>
 
           {activeView === "chat" && (
-            <div className="flex min-h-0 flex-1 flex-col gap-2">
+            <div
+              data-chat-surface
+              className="flex min-h-0 flex-1 flex-col gap-2"
+            >
               <ChatMessageList messages={chatStream.messages} className="rounded-md" />
               {chatStream.clarify && (
                 <ClarifyCard

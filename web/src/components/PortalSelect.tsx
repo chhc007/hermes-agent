@@ -266,7 +266,11 @@ export function PortalSelect({
 
 // Marker component — `PortalSelect` reads `value`/`children` from its tree.
 // Renders nothing on its own.
-export function PortalSelectOption() {
+export function PortalSelectOption(props: {
+  value?: unknown;
+  children?: ReactNode;
+}) {
+  void props;
   return null;
 }
 
