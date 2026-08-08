@@ -43,6 +43,9 @@ import { ChatSessionList } from "@/components/ChatSessionList";
 import { ChatInput, type ChatInputHandle } from "@/components/ChatInput";
 import { ChatMessageList } from "@/components/ChatMessageList";
 import { ChatUsageBar } from "@/components/ChatUsageBar";
+import { SessionStatusBar } from "@/components/SessionStatusBar";
+import { TodoPanel } from "@/components/TodoPanel";
+import { ModelPickerDialog } from "@/components/ModelPickerDialog";
 import { ClarifyCard } from "@/components/ClarifyCard";
 import { SlashPopover, type SlashPopoverHandle } from "@/components/SlashPopover";
 import { GatewayClient } from "@/lib/gatewayClient";
@@ -406,6 +409,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const respondClarifyRef = useRef(chatStream.respondClarify);
   const setCompactingRef = useRef(chatStream.setCompacting);
   const refreshUsageRef = useRef(chatStream.refreshUsage);
+  // Live access to the latest stream state (sid, meta, messages) for RPC
+  // helpers without subscribing this component to every state change.
+  const chatStreamRef = useRef(chatStream);
   // Stable refs for the async handlers below — sendUserMessage/loadHistory are stable.
   useEffect(() => {
     sendUserMessageRef.current = chatStream.sendUserMessage;
@@ -415,6 +421,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     resetChatRef.current = chatStream.resetChat;
     setCompactingRef.current = chatStream.setCompacting;
     refreshUsageRef.current = chatStream.refreshUsage;
+    chatStreamRef.current = chatStream;
   }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify, chatStream.resetChat, chatStream.setCompacting, chatStream.refreshUsage]);
 
   // Slash-command completion: the composer text flows up to the popover via
@@ -615,6 +622,34 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     };
   }, [chatStream.lastEventSessionId, chatStream.activeSessionId, resumeParam]);
 
+  // Background-process count (mirrors TUI status bar `N bg`). Polled while
+  // the chat tab is mounted; a quiet miss degrades to 0.
+  const [bgCount, setBgCount] = useState(0);
+  useEffect(() => {
+    if (!completionGw || completionGw.connectionState !== "open") return;
+    let cancelled = false;
+    const tick = () => {
+      completionGw
+        .request<{ processes?: unknown[] }>("process.list", {})
+        .then((res) => {
+          if (cancelled) return;
+          setBgCount(Array.isArray(res?.processes) ? res.processes.length : 0);
+        })
+        .catch(() => {
+          if (!cancelled) setBgCount(0);
+        });
+    };
+    tick();
+    const id = window.setInterval(tick, 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [completionGw]);
+
+  // Model picker: popup dialog driven by the status bar's model chip.
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+
   useEffect(() => {
     if (!resumeParam) return;
 
@@ -767,6 +802,53 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     },
     [],
   );
+  const sendChatPromptRef = useRef(sendChatPrompt);
+  useEffect(() => {
+    sendChatPromptRef.current = sendChatPrompt;
+  }, [sendChatPrompt]);
+
+  // Stop the running turn (mirrors TUI Ctrl+C → session.interrupt).
+  const stopTurn = useCallback(() => {
+    const sid =
+      chatStreamRef.current?.lastEventSessionId ??
+      chatStreamRef.current?.activeSessionId ??
+      resumeParam;
+    if (!sid) return;
+    completionGw
+      .request<{ interrupted?: boolean }>("session.interrupt", { session_id: sid })
+      .catch(() => {
+        /* best-effort — the turn may have already ended */
+      });
+  }, [completionGw, resumeParam]);
+
+  // Undo the last exchange (mirrors TUI /undo → session.undo).
+  const undoLast = useCallback(async () => {
+    const sid =
+      chatStreamRef.current?.lastEventSessionId ??
+      chatStreamRef.current?.activeSessionId ??
+      resumeParam;
+    if (!sid) return false;
+    try {
+      const res = await completionGw.request<{ removed?: number }>("session.undo", {
+        session_id: sid,
+      });
+      return (res?.removed ?? 0) > 0;
+    } catch {
+      return false;
+    }
+  }, [completionGw, resumeParam]);
+
+  // Retry the last user message (mirrors TUI /retry → session.undo + resend).
+  const retryLast = useCallback(async () => {
+    const ok = await undoLast();
+    if (!ok) return;
+    const lastUser = [...chatStreamRef.current?.messages ?? []]
+      .reverse()
+      .find((m) => m.role === "user");
+    if (lastUser?.text) {
+      sendChatPromptRef.current(lastUser.text);
+    }
+  }, [undoLast]);
 
   // Route image files from the chat composer through the same upload→/image
   // attach pipeline the xterm paste/drop path uses.
@@ -1896,9 +1978,58 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               data-chat-surface
               className="flex min-h-0 flex-1 flex-col gap-2"
             >
-              <div className="flex shrink-0 items-center justify-between px-1">
-                <ChatUsageBar usage={chatStream.usage} />
-                <div className="flex-1" />
+              <div className="flex shrink-0 items-center justify-between gap-2 px-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <ChatUsageBar usage={chatStream.usage} />
+                  <SessionStatusBar
+                    meta={chatStream.meta}
+                    subagents={chatStream.subagents}
+                    sessionStartedAt={chatStream.sessionStartedAt}
+                    bgCount={bgCount}
+                    className="hidden md:flex"
+                  />
+                </div>
+                <div className="ml-auto flex shrink-0 items-center gap-1">
+                  {chatStream.meta.model && (
+                    <button
+                      type="button"
+                      onClick={() => setModelPickerOpen(true)}
+                      className="hidden rounded border border-border/60 bg-secondary/30 px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-secondary/50 sm:inline-flex"
+                      title={`${t.chat.currentModel ?? "Current model"}: ${chatStream.meta.model}`}
+                    >
+                      {chatStream.meta.model}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void undoLast()}
+                    disabled={!chatStream.meta.running && !chatStream.messages.length}
+                    className="inline-flex items-center gap-0.5 rounded border border-border/60 bg-secondary/30 px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-secondary/50 disabled:cursor-not-allowed disabled:opacity-40"
+                    title={t.chat.undo ?? "Undo last exchange"}
+                  >
+                    ↶
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void retryLast()}
+                    disabled={!chatStream.messages.length}
+                    className="inline-flex items-center gap-0.5 rounded border border-border/60 bg-secondary/30 px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-secondary/50 disabled:cursor-not-allowed disabled:opacity-40"
+                    title={t.chat.retry ?? "Retry last message"}
+                  >
+                    ↻
+                  </button>
+                  {chatStream.meta.running && (
+                    <button
+                      type="button"
+                      onClick={stopTurn}
+                      className="inline-flex items-center gap-1 rounded border border-destructive/50 bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive transition-colors hover:bg-destructive/25"
+                      title={t.chat.stop ?? "Stop generation"}
+                    >
+                      <span className="size-2 rounded-[1px] bg-current" aria-hidden />
+                      {t.chat.stop ?? "Stop"}
+                    </button>
+                  )}
+                </div>
               </div>
               {chatStream.compacting && (
                 <div className="flex shrink-0 items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning">
@@ -1906,6 +2037,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                   {t.chat.compactingMessage ?? "Compacting context…"}
                 </div>
               )}
+              <TodoPanel todos={chatStream.todos} />
               <ChatMessageList messages={chatStream.messages} className="rounded-md" />
               {chatStream.clarify && (
                 <ClarifyCard
@@ -1932,6 +2064,25 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                 />
               </div>
             </div>
+          )}
+
+          {modelPickerOpen && (
+            <ModelPickerDialog
+              gw={completionGw}
+              sessionId={
+                chatStream.lastEventSessionId ??
+                chatStream.activeSessionId ??
+                resumeParam ??
+                undefined
+              }
+              onSubmit={(slashCommand) => {
+                // Mirror the TUI: the picker emits `/model <name> --provider
+                // <slug> --session`; send it straight into the PTY.
+                sendChatPromptRef.current(slashCommand);
+                setModelPickerOpen(false);
+              }}
+              onClose={() => setModelPickerOpen(false)}
+            />
           )}
 
           <div

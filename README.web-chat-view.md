@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.6-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.6">
+  <img src="https://img.shields.io/badge/Hermes%20Web-气泡版%20v1.7-8B5CF6?style=for-the-badge" alt="Hermes Web Chat v1.7">
   <img src="https://img.shields.io/badge/状态-稳定-green?style=for-the-badge" alt="Status: stable">
-  <img src="https://img.shields.io/badge/测试-337%20passed-22c55e?style=for-the-badge" alt="Tests: 337 passed">
+  <img src="https://img.shields.io/badge/测试-345%20passed-22c55e?style=for-the-badge" alt="Tests: 345 passed">
   <img src="https://img.shields.io/badge/后端-479%20passed-22c55e?style=for-the-badge" alt="Backend tests: 479 passed">
 </p>
 
@@ -43,6 +43,12 @@
 | 🔁 **终端切会话同步** | TUI 内 `/resume`、`/sessions`、`/compact`（session key 旋转）后气泡自动清空旧消息并重拉新会话历史，与终端保持一致（v1.6） |
 | 📊 **上下文使用量** | 消息列表顶部显示 context 用量条（`used/max tok` + 填充条）+ 压缩次数徽标，数据来自 `session.info.usage`（v1.6） |
 | 🗜️ **压缩兼容** | `/compact`/`/compress` 时显示「正在压缩上下文」banner（`status.update` kind=compacting/compressing），压缩后用量/历史自动刷新（v1.6） |
+| ⏹️ **停止生成** | agent 运行中显示红色 Stop 按钮（`session.interrupt` RPC，同 TUI Ctrl+C）（v1.7） |
+| ↶↻ **撤销/重试** | 一键撤销上一轮（`session.undo`）或重试最后一条消息（v1.7） |
+| 🧭 **当前模型+切换** | 状态栏显示 model + 推理强度，点击弹出官方模型选择器（`model.options`/`config.set`）（v1.7） |
+| ⛓️ **子代理 HUD** | `subagent.*` 事件渲染活跃子代理数（v1.7） |
+| 📋 **todo 面板** | `tool.start.todos` 渲染 agent 任务列表 + 进度（v1.7） |
+| 📺 **会话状态栏** | 忙碌指示 + 会话时长 + cwd + 后台任务数（`process.list` 轮询）（v1.7） |
 | 🇨🇳 **完整汉化** | zh 翻译补全（63 key，不再 fallback 英文）+ 默认语言中文（浏览器 `zh*` 自动识别，localStorage 手动选择优先）+ Chat 核心组件全 i18n（输入框/气泡/澄清/媒体） |
 
 ---
@@ -431,6 +437,18 @@ npm run build --workspace web
 
 ## 📦 版本
 
+- **v1.7**（当前，稳定）：**TUI 功能对齐（高+中价值）** — 气泡视图补齐官方终端
+  的常用能力：
+  1) **停止生成**：`session.interrupt` RPC，agent 运行中显示红色 Stop 按钮；
+  2) **撤销/重试**：`session.undo` RPC + 重发最后用户消息（↶/↻ 按钮）；
+  3) **当前模型显示 + 切换**：状态栏显示 model/reasoning effort，点击打开
+  `ModelPickerDialog`（复用官方 `model.options` + `config.set`，发送
+  `/model … --session` 到 PTY）；4) **子代理 HUD**：`subagent.start/progress/
+  complete` 事件渲染 `⛓ N`；5) **todo 面板**：`tool.start.todos` 渲染任务
+  列表+进度（📋 done/total）；6) **会话状态栏**（SessionStatusBar）：忙碌指示
+  （session.info.running）、会话时长（本地计时）、cwd、后台任务数
+  （process.list 轮询）、排队计数；7) **压缩 banner 保持**（v1.6 已有）。
+  全部复用现有事件/RPC，零后端改动。测试 345 passed。
 - **v1.6.1**（当前，稳定）：**上下文用量条真正显示** — 用户反馈「看不到上下文用量」。
   根因：① PTY 启动时发出的初始 `session.info` 早于浏览器订阅 `/api/events`
   （实时广播、无重放），usage 一直是 null；② 新会话 usage 全 0 时组件 return null

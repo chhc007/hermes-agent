@@ -196,6 +196,10 @@ export const af: Translations = {
     contextUsageTitle: "Context window usage",
     compressionsTitle: "Context compressions",
     compactingMessage: "Compacting context…",
+    currentModel: "Current model",
+    undo: "Undo last exchange",
+    retry: "Retry last message",
+    stop: "Stop",
   },
 
   analytics: {

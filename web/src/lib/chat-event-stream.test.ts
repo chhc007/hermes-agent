@@ -31,6 +31,10 @@ function init(messages: ChatEventStreamState["messages"] = []): ChatEventStreamS
     usage: null,
     compacting: false,
     lastEventSessionId: null,
+    meta: { running: false },
+    subagents: [],
+    todos: [],
+    sessionStartedAt: null,
   };
 }
 
@@ -693,5 +697,117 @@ describe("parseEventFrame session_id", () => {
   it("leaves sessionId undefined when absent", () => {
     const frame = parseEventFrame(buildEventFrame("tool.start", { tool_id: "1" }));
     expect(frame?.sessionId).toBeUndefined();
+  });
+});
+
+describe("session meta (model/provider/reasoning/running/cwd)", () => {
+  it("captures meta fields from session.info", () => {
+    const state = reduce([
+      [
+        "session.info",
+        {
+          title: "S",
+          stored_session_id: "sess-1",
+          model: "deepseek-v4-flash",
+          provider: "deepseek",
+          reasoning_effort: "high",
+          running: true,
+          cwd: "/workspace",
+        },
+      ],
+    ]);
+    expect(state.meta).toMatchObject({
+      model: "deepseek-v4-flash",
+      provider: "deepseek",
+      reasoningEffort: "high",
+      running: true,
+      cwd: "/workspace",
+    });
+    expect(state.sessionStartedAt).not.toBeNull();
+  });
+
+  it("tracks running=false on idle session.info", () => {
+    const state = reduce([
+      ["session.info", { title: "S", stored_session_id: "sess-1", running: false }],
+    ]);
+    expect(state.meta.running).toBe(false);
+  });
+});
+
+describe("subagent frames", () => {
+  it("adds a subagent on subagent.start", () => {
+    const state = reduce([
+      ["subagent.start", { subagent_id: "sub-1", name: "coder" }],
+    ]);
+    expect(state.subagents).toHaveLength(1);
+    expect(state.subagents[0]).toMatchObject({ id: "sub-1", name: "coder", status: "running" });
+  });
+
+  it("marks a subagent thinking on subagent.progress", () => {
+    const state = reduce([
+      ["subagent.start", { subagent_id: "sub-1", name: "coder" }],
+      ["subagent.progress", { subagent_id: "sub-1", thinking: "parsing…", tool: "read_file" }],
+    ]);
+    expect(state.subagents[0]?.status).toBe("thinking");
+    expect(state.subagents[0]?.thinking).toBe("parsing…");
+  });
+
+  it("removes a subagent on subagent.complete", () => {
+    const state = reduce([
+      ["subagent.start", { subagent_id: "sub-1", name: "coder" }],
+      ["subagent.complete", { subagent_id: "sub-1", summary: "done" }],
+    ]);
+    expect(state.subagents).toHaveLength(0);
+  });
+});
+
+describe("todo list (tool.start.todos)", () => {
+  it("captures todos from a tool.start frame", () => {
+    const state = reduce([
+      [
+        "tool.start",
+        {
+          tool_id: "t1",
+          name: "todo",
+          todos: [
+            { content: "A", status: "completed" },
+            { content: "B", status: "in_progress" },
+            { content: "C", status: "pending" },
+          ],
+        },
+      ],
+    ]);
+    expect(state.todos).toHaveLength(3);
+    expect(state.todos[0]).toMatchObject({ content: "A", status: "completed" });
+    expect(state.todos[1]).toMatchObject({ content: "B", status: "in_progress" });
+  });
+
+  it("ignores malformed todos payloads", () => {
+    const state = reduce([
+      ["tool.start", { tool_id: "t1", name: "read_file", todos: "not-array" }],
+    ]);
+    expect(state.todos).toHaveLength(0);
+  });
+
+  it("clears todos on a session switch", () => {
+    const before = reduce([
+      ["session.info", { title: "A", stored_session_id: "sess-a" }],
+      [
+        "tool.start",
+        {
+          tool_id: "t1",
+          name: "todo",
+          todos: [{ content: "A", status: "pending" }],
+        },
+      ],
+    ]);
+    expect(before.todos).toHaveLength(1);
+    const after = chatEventStreamReducer(before, {
+      type: "event",
+      eventType: "session.info",
+      payload: { title: "B", stored_session_id: "sess-b" },
+    });
+    expect(after.todos).toHaveLength(0);
+    expect(after.subagents).toHaveLength(0);
   });
 });

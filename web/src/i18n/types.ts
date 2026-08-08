@@ -229,6 +229,10 @@ export interface Translations {
     contextUsageTitle: string;
     compressionsTitle: string;
     compactingMessage: string;
+    currentModel: string;
+    undo: string;
+    retry: string;
+    stop: string;
   };
 
   // ── Analytics page ──

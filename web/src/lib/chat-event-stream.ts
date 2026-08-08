@@ -113,6 +113,36 @@ export interface ClarifyRequest {
   multiSelect: boolean;
 }
 
+/** A live subagent surfaced by `subagent.start` / `subagent.progress` /
+ *  `subagent.complete` frames (relayed from child sessions). */
+export interface LiveSubagent {
+  id: string;
+  name: string;
+  status: "running" | "thinking" | "complete" | "error";
+  summary?: string;
+  thinking?: string;
+  tool?: string;
+}
+
+/** One entry of the agent's todo list (from `tool.start.todos`). */
+export interface TodoItem {
+  id?: string;
+  content: string;
+  status: "pending" | "in_progress" | "completed" | "cancelled";
+}
+
+/** Session metadata surfaced by `session.info` (model, provider, cwd, …). */
+export interface SessionMeta {
+  model?: string;
+  provider?: string;
+  reasoningEffort?: string;
+  /** True while a turn is running (session.info.running). */
+  running: boolean;
+  cwd?: string;
+  /** Gateway session id (from the frame's `session_id`). */
+  sid?: string;
+}
+
 export interface ChatEventStreamState {
   messages: ChatMessage[];
   connectionState: ConnectionState;
@@ -131,6 +161,15 @@ export interface ChatEventStreamState {
   /** Gateway session id (from the last event frame's `session_id`), used by
    *  the host to actively refresh usage via the session.usage RPC. */
   lastEventSessionId: string | null;
+  /** Session metadata (model/provider/reasoning/running/cwd) from
+   *  `session.info`. Drives the session status bar. */
+  meta: SessionMeta;
+  /** Live subagents (relayed `subagent.*` frames). Drives the spawn HUD. */
+  subagents: LiveSubagent[];
+  /** Agent todo list (from `tool.start.todos`). Rendered as a panel. */
+  todos: TodoItem[];
+  /** Seconds since the session started (tracked locally from first frame). */
+  sessionStartedAt: number | null;
 }
 
 export type ChatEventStreamAction =
@@ -157,6 +196,27 @@ function nextId(): string {
 function asString(value: unknown): string | undefined {
   if (typeof value === "string" && value.trim().length > 0) return value.trim();
   return undefined;
+}
+
+/** Normalize a `todos` payload (from tool.start frames) into TodoItem[].
+ *  Accepts the backend's array-of-objects shape; ignores malformed entries. */
+function normalizeTodos(raw: unknown): TodoItem[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const items: TodoItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const obj = entry as Record<string, unknown>;
+    const content = asString(obj.content) ?? asString(obj.text) ?? asString(obj.title);
+    if (!content) continue;
+    const statusRaw = asString(obj.status) ?? "pending";
+    let status: TodoItem["status"];
+    if (statusRaw === "in_progress" || statusRaw === "in-progress") status = "in_progress";
+    else if (statusRaw === "completed" || statusRaw === "done") status = "completed";
+    else if (statusRaw === "cancelled" || statusRaw === "canceled") status = "cancelled";
+    else status = "pending";
+    items.push({ id: asString(obj.id), content, status });
+  }
+  return items.length ? items : undefined;
 }
 
 /** Like `asString` but preserves whitespace — for streaming deltas where a
@@ -266,6 +326,10 @@ export function createInitialState(): ChatEventStreamState {
     usage: null,
     compacting: false,
     lastEventSessionId: null,
+    meta: { running: false },
+    subagents: [],
+    todos: [],
+    sessionStartedAt: null,
   };
 }
 
@@ -374,10 +438,79 @@ export function chatEventStreamReducer(
         sessionTitle: asString(p.title) ?? state.sessionTitle,
         activeSessionId: nextSessionId,
         usage,
+        meta: {
+          ...state.meta,
+          model: asString(p.model) ?? state.meta.model,
+          provider: asString(p.provider) ?? state.meta.provider,
+          reasoningEffort:
+            asString(p.reasoning_effort) ?? state.meta.reasoningEffort,
+          running: typeof p.running === "boolean" ? p.running : state.meta.running,
+          cwd: asString(p.cwd) ?? state.meta.cwd,
+          sid: eventSessionId ?? state.meta.sid,
+        },
+        // Start the session timer on the first session.info frame.
+        sessionStartedAt:
+          state.sessionStartedAt ??
+          (switched ? null : state.sessionStartedAt) ??
+          (p.stored_session_id || eventSessionId ? Date.now() : state.sessionStartedAt),
         // Clear stale messages on an internal session switch (live events for
         // the new session will re-populate; history is re-fetched by host).
         messages: switched ? [] : state.messages,
         clarify: switched ? null : state.clarify,
+        // A session switch resets subagent/todo state belonging to the old
+        // conversation.
+        subagents: switched ? [] : state.subagents,
+        todos: switched ? [] : state.todos,
+      };
+    }
+
+    // Live subagent frames (relayed by the parent from child sessions).
+    case "subagent.start": {
+      const id = asString(p.subagent_id) ?? asString(p.id) ?? "";
+      const name = asString(p.name) ?? `subagent ${id.slice(0, 6)}`;
+      if (!id) return state;
+      const existing = state.subagents.find((s) => s.id === id);
+      const next = existing
+        ? { ...existing, status: "running" as const, name }
+        : { id, name, status: "running" as const };
+      return {
+        ...state,
+        subagents: [...state.subagents.filter((s) => s.id !== id), next],
+      };
+    }
+    case "subagent.progress": {
+      const id = asString(p.subagent_id) ?? asString(p.id) ?? "";
+      if (!id) return state;
+      return {
+        ...state,
+        subagents: state.subagents.map((s) =>
+          s.id === id
+            ? {
+                ...s,
+                status: "thinking" as const,
+                thinking: asString(p.thinking) ?? asString(p.text) ?? s.thinking,
+                tool: asString(p.tool) ?? asString(p.tool_name) ?? s.tool,
+              }
+            : s,
+        ),
+      };
+    }
+    case "subagent.complete": {
+      const id = asString(p.subagent_id) ?? asString(p.id) ?? "";
+      if (!id) return state;
+      return {
+        ...state,
+        subagents: state.subagents
+          .map((s) =>
+            s.id === id
+              ? {
+                  ...s,
+                  status: "complete" as const,
+                  summary: asString(p.summary) ?? asString(p.result) ?? s.summary,
+                }
+              : s,
+          )
+          .filter((s) => s.status !== "complete"),
       };
     }
 
@@ -519,6 +652,10 @@ export function chatEventStreamReducer(
         argsText: args,
         status: "running",
       };
+      // The gateway forwards the agent's todo tool state on tool.start
+      // (server.py wraps todo tool output into `todos`). Mirror it so the
+      // chat surface can render a todo panel like the TUI does.
+      const todos = normalizeTodos(p.todos);
       const attach = (m: ChatMessage): ChatMessage => {
         const segments = m.segments ?? [];
         const existing = segments.find((s): s is ToolSegment => s.kind === "tool" && s.toolId === toolId);
@@ -534,6 +671,7 @@ export function chatEventStreamReducer(
         return {
           ...state,
           messages: state.messages.map((m, i) => (i === idx ? attach(m) : m)),
+          ...(todos ? { todos } : {}),
         };
       }
       const fresh = openStreamingMessage(state);
@@ -541,6 +679,7 @@ export function chatEventStreamReducer(
       return {
         ...fresh,
         messages: fresh.messages.map((m, i) => (i === last ? attach(m) : m)),
+        ...(todos ? { todos } : {}),
       };
     }
 
@@ -738,6 +877,10 @@ export function useChatEventStream(channel: string) {
     usage: null,
     compacting: false,
     lastEventSessionId: null,
+    meta: { running: false },
+    subagents: [],
+    todos: [],
+    sessionStartedAt: null,
   }));
 
   // Composer hook: locally append the user's own bubble (the /api/events

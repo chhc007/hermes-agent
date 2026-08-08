@@ -196,6 +196,10 @@ export const zhHant: Translations = {
     contextUsageTitle: "上下文視窗使用量",
     compressionsTitle: "上下文壓縮次數",
     compactingMessage: "正在壓縮上下文…",
+    currentModel: "當前模型",
+    undo: "撤銷上一輪",
+    retry: "重試上一條訊息",
+    stop: "停止",
   },
 
   analytics: {

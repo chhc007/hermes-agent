@@ -209,6 +209,10 @@ export const zh: Translations = {
     contextUsageTitle: "上下文窗口使用量",
     compressionsTitle: "上下文压缩次数",
     compactingMessage: "正在压缩上下文…",
+    currentModel: "当前模型",
+    undo: "撤销上一轮",
+    retry: "重试上一条消息",
+    stop: "停止",
   },
 
   analytics: {
