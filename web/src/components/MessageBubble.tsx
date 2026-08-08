@@ -135,12 +135,18 @@ function SegmentSequence({
 }) {
   const segments = message.segments as ChatSegment[];
 
-  // Only the last TEXT segment may still be streaming; any earlier text
-  // segment is finished and renders as Markdown.
+  // A text segment is "still streaming" ONLY when it is the very tail of the
+  // whole segment list. Once anything follows it — a tool call, a thinking
+  // block — the model has moved on and that text is final: render it as
+  // Markdown immediately instead of holding it as raw prose until
+  // message.complete. (The reducer appends new text to the last TEXT
+  // segment, so a text segment followed by a tool segment will never grow
+  // again — it is safe to finalize.)
   const lastTextIdx = segments.reduce<number>(
     (acc, s, i) => (s.kind === "text" ? i : acc),
     -1,
   );
+  const tailIdx = segments.length - 1;
 
   return (
     <div className="space-y-1.5">
@@ -148,7 +154,7 @@ function SegmentSequence({
         <Segment
           key={segmentKey(seg, i)}
           seg={seg}
-          isStreamingText={streaming && i === lastTextIdx}
+          isStreamingText={streaming && i === lastTextIdx && i === tailIdx}
         />
       ))}
     </div>

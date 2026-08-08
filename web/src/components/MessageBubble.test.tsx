@@ -197,6 +197,24 @@ describe("MessageBubble segments ordering", () => {
     expect(visibleText()).toContain("streaming partial");
   });
 
+  it("finalizes the pre-tool text as markdown while the tool is still running", async () => {
+    const msg: ChatMessage = {
+      id: "m4b",
+      role: "assistant",
+      status: "streaming",
+      ts: 1,
+      // The model finished this paragraph, then called a tool. The text must
+      // NOT stay raw prose: it is final and should render as Markdown right
+      // away (the paragraph can never grow — the reducer opens a new text
+      // segment after the tool).
+      segments: [segments.text("**bold** finished part"), segments.tool("t4", "read_file")],
+    };
+    await render(<MessageBubble message={msg} />);
+    expect(container.querySelector('[data-testid="tool-call"]')?.textContent).toBe("read_file");
+    const markdownDivs = Array.from(container.querySelectorAll('[data-testid="markdown"]'));
+    expect(markdownDivs.some((d) => d.textContent === "**bold** finished part")).toBe(true);
+  });
+
   it("renders an earlier (finished) text segment as markdown even while streaming", async () => {
     const msg: ChatMessage = {
       id: "m5",

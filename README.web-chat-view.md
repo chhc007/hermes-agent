@@ -220,12 +220,64 @@ web/src/components/ToolCallBlock.tsx   # 工具调用卡片（纯 CSS 状态徽�
 web/src/components/ClarifyCard.tsx     # 选项卡片（单选/多选/Other）
 web/src/components/MediaImage.tsx      # 图片卡片 + 点击放大 lightbox
 web/src/components/Markdown.tsx        # 轻量 Markdown（表格 + MEDIA: 行）
-web/src/components/ChatInput.tsx       # 输入框（多行/图片/发送）
+web/src/components/ChatInput.tsx       # 输入框（多行/多文件附件 chips/发送）
+web/src/lib/chatImagePaste.ts          # 剪贴板/拖拽图片 → /api/chat/image-upload → /image
+web/src/lib/chatFileUpload.ts          # 多文件上传 /api/chat/files-upload + @file: 引用构造
 web/src/components/SlashPopover.tsx    # slash 补全（Tab/Enter 选中，终端命令徽标）
 web/src/lib/terminal-commands.ts       # 终端专属命令清单（徽标 + 提示的单一事实源）
 web/src/pages/ChatPage.tsx             # Chat/Terminal 视图切换 + PTY 连接
-hermes_cli/web_server.py               # 后端（仅 /api/media 放宽为任意目录 + 64MB）
+hermes_cli/web_server.py               # 后端（/api/media + /api/chat/image-upload + /api/chat/files-upload）
 ```
+
+### 多文件上传（v1.7.5 新增）
+
+用户可以在输入框一次拖入/选择**多个任意类型文件**，显示为附件 chips（可移除），
+输入文字后**一并发送**。文件固定落在 `~/workspace/uploads/`（用户指定目录）。
+
+**交互流程**：
+1. 拖拽（任意位置，ChatPage host capture 拦截防止浏览器打开）或点📎选择文件 → 进
+   ChatInput 附件列表（去重，chips 显示文件名+大小，可移除）
+2. 输入文字（可空）→ 点发送/Enter
+3. ChatPage `sendChatPrompt` 先 `POST /api/chat/files-upload`（multipart，多文件）
+   上传全部文件 → 构造 `@file:<绝对路径>` 行 + 文字 → 走 PTY 一次提交
+4. TUI 侧 `prompt.submit` → `input.detect_drop` → `@file:` 引用展开：文本文件内容
+   注入上下文、二进制文件生成"可用工具读取"的引用块 → agent 用 read_file/vision 等
+   工具处理
+
+**消息格式**（走 PTY 的完整文本）：
+```
+@file:/home/hermes/workspace/uploads/20260808_2330_a1b2_报告.xlsx
+@file:/home/hermes/workspace/uploads/20260808_2330_c3d4_截图.png
+用户输入的文字
+```
+
+**关键点**：
+- 上传目录 `~/workspace/uploads/` 必须在会话 cwd（dashboard 进程 cwd，实测为 `~`）
+  之下——`@file:` 引用展开有 allowed_root 限制，目录选在 cwd 内才能展开
+- 路径含空格/引号时用反引号包裹（`formatRefValue` 对齐后端 format_reference_value）
+- 剪贴板粘贴图片仍走 `/image` 立即发送路径（与拖拽"攒着发"心智分开，未统一）
+- 单文件上限 100MB（`_CHAT_FILE_UPLOAD_MAX_BYTES`，与前端 MAX_FILE_BYTES 同步）
+- 文件名 sanitize 保留中文/空格，只去路径与控制字符；时间戳+随机前缀保证唯一
+- 发送是异步的（先上传后提交），上传失败返回 false → 输入框保留文字+附件可重试
+
+### 流式分段即时格式化（v1.7.6）
+
+**问题**：一次回复里，前面已经说完整的一段话要等整个消息 `message.complete` 才从
+纯文本变成 Markdown。中间工具调用时，前面那段话一直停留在"流式纯文本"状态。
+
+**根因**：`MessageBubble.tsx` 的 `SegmentSequence` 把"最后一个 text segment"一律
+当作流式中（`isStreamingText = streaming && i === lastTextIdx`）。但工具调用发生后
+segments 是 `[text段落A, tool]` —— 段落A虽是最后一个 text segment，后面却有
+tool segment，模型已经说完这段话了，却仍被当流式纯文本渲染。
+
+**修复**：text segment 只有在**整个 segments 列表的末尾**（后面没有 tool/thinking）
+才算流式中：`isStreamingText = streaming && i === lastTextIdx && i === tailIdx`。
+一旦后面出现工具调用/思考块，前面的话立即定型渲染 Markdown。
+（安全性：reducer 的 message.delta 只追加到"最后一个 text segment"，所以
+text 段后面出现 tool 后它不会再增长，定型是安全的。）
+
+**测试**：`MessageBubble.test.tsx` 新增 "finalizes the pre-tool text as markdown
+while the tool is still running"。
 
 ### 后端改动（唯一一处）
 
@@ -233,6 +285,12 @@ hermes_cli/web_server.py               # 后端（仅 /api/media 放宽为任意
 - 返回**原始图片二进制**（`Response` + 正确 media_type），而非 JSON data_url（img 才能直接渲染）
 - 目录白名单放宽为**任意可读路径**（保留图片扩展名白名单 + 64MB 大小上限 + 会话认证）
 - `Cache-Control: private, max-age=3600`
+
+`hermes_cli/web_server.py` 的 `/api/chat/files-upload`（v1.7.5 新增）：
+- `POST` multipart/form-data，`files` 字段可传多个文件（FastAPI `list[UploadFile]`）
+- 保存到 `~/workspace/uploads/`（`_CHAT_UPLOADS_DIR`），文件名
+  `{YYYYMMDD_HHMMSS}_{hex4}_{原文件名}`，返回
+  `{ok, files: [{path, name, bytes, mime_type}]}`
 
 ### 已知边界
 
