@@ -525,8 +525,12 @@ export default function App() {
 
       <header
         className={cn(
-          "lg:hidden fixed top-0 left-0 right-0 z-40 min-h-14",
-          "flex items-center gap-2 px-4 py-2",
+          // Mobile brand bar: keep it slim — the page header below already
+          // shows the session title, so 2 stacked bars (brand + title) eat
+          // most of the small viewport. min-h-11 + tighter padding reclaims
+          // ~12px on phones without dropping anything.
+          "lg:hidden fixed top-0 left-0 right-0 z-40 min-h-11",
+          "flex items-center gap-2 px-4 py-1.5",
           "border-b border-current/20",
           "bg-background-base",
         )}
@@ -548,7 +552,7 @@ export default function App() {
           <Menu />
         </Button>
 
-        <Typography className="font-bold text-[0.95rem] leading-[0.95] tracking-[0.05em] text-midground">
+        <Typography className="font-bold text-[0.8rem] leading-none tracking-[0.05em] text-midground">
           {t.app.brand}
         </Typography>
       </header>
@@ -568,7 +572,7 @@ export default function App() {
       <PluginSlot name="header-banner" />
       <ProfileScopeBanner />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-14 lg:pt-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-11 lg:pt-0">
         <div className="flex min-h-0 min-w-0 flex-1">
           <aside
             id="app-sidebar"
