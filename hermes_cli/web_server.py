@@ -15263,6 +15263,55 @@ def _live_sid_matches_resume(
     return (sess.get("session_key") or "") == stored_key
 
 
+def _build_replayed_session_info_frame(app, channel: str) -> Optional[str]:
+    """Synthesize a ``session.info`` frame for the channel's live session.
+
+    The PTY emits ``session.info`` at spawn / session-switch time; a browser
+    that subscribes to ``/api/events`` afterwards misses that frame and would
+    see no context usage / session metadata until the next turn. This helper
+    reads the per-channel active-session file, resolves the live gateway
+    session, and builds the exact frame the TUI would have sent. Returns None
+    when there is nothing to replay (no active session / no agent yet).
+    """
+    try:
+        from tui_gateway import server as _tg  # lazy: dashboard-embedded only
+
+        path = _active_session_file_for_channel(app, channel)
+        sid = _read_active_session_file(path)
+        if not sid:
+            return None
+        with _tg._sessions_lock:
+            session = _tg._sessions.get(sid)
+        if session is None:
+            # Stored-key path: the file may hold a durable id while the gateway
+            # keys by short sid — search live sessions for the matching key.
+            for cand in list(_tg._sessions.values()):
+                if (cand.get("session_key") or "") == sid:
+                    session = cand
+                    break
+        if session is None:
+            return None
+        agent = session.get("agent")
+        if agent is None and not _tg._metadata_mirror(session):
+            return None
+        info = _tg._session_info(agent, session)
+        return json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "event",
+                "params": {
+                    "type": "session.info",
+                    "session_id": sid,
+                    "payload": info,
+                },
+            },
+            ensure_ascii=False,
+        )
+    except Exception:
+        _log.debug("session.info replay build failed channel=%s", channel, exc_info=True)
+        return None
+
+
 def _ws_close_reason(text: str) -> str:
     """Clamp a WS close reason to the protocol's 123-byte UTF-8 limit.
 
@@ -16147,6 +16196,19 @@ async def events_ws(ws: WebSocket) -> None:
     event_channels, event_lock = _get_event_state(ws.app)
     async with event_lock:
         event_channels.setdefault(channel, set()).add(ws)
+
+    # Replay the current session.info to a late subscriber. The PTY emits
+    # session.info once at spawn (or on session switch); a browser that opens
+    # /api/events afterwards would otherwise never see usage/session metadata
+    # until the next turn. Reading the per-channel active-session file and the
+    # embedded gateway's live session record lets us synthesize the exact
+    # frame the TUI would have sent — no waiting for the next emit.
+    replay = _build_replayed_session_info_frame(ws.app, channel)
+    if replay:
+        try:
+            await ws.send_text(replay)
+        except Exception:
+            _log.debug("session.info replay send failed channel=%s", channel)
 
     try:
         while True:

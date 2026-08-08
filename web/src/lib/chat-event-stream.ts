@@ -128,6 +128,9 @@ export interface ChatEventStreamState {
   /** True while the agent is compressing the context (`status.update` with
    *  kind "compacting"/"compressing"). Surfaced as a banner in chat view. */
   compacting: boolean;
+  /** Gateway session id (from the last event frame's `session_id`), used by
+   *  the host to actively refresh usage via the session.usage RPC. */
+  lastEventSessionId: string | null;
 }
 
 export type ChatEventStreamAction =
@@ -138,7 +141,8 @@ export type ChatEventStreamAction =
   | { type: "system_message"; text: string }
   | { type: "history"; messages: ChatMessage[] }
   | { type: "clarify_answered" }
-  | { type: "compacting"; compacting: boolean };
+  | { type: "compacting"; compacting: boolean }
+  | { type: "usage"; usage: ChatUsage | null };
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -261,6 +265,7 @@ export function createInitialState(): ChatEventStreamState {
     clarify: null,
     usage: null,
     compacting: false,
+    lastEventSessionId: null,
   };
 }
 
@@ -285,6 +290,11 @@ export function chatEventStreamReducer(
   // session.compress RPC directly (so the banner appears immediately).
   if (action.type === "compacting") {
     return { ...state, compacting: action.compacting };
+  }
+
+  // Replace the usage snapshot (e.g. after an explicit session.usage RPC).
+  if (action.type === "usage") {
+    return { ...state, usage: action.usage };
   }
 
   // Locally-optimistic user message: /api/events carries no user-input
@@ -333,6 +343,11 @@ export function chatEventStreamReducer(
   const { eventType, payload } = action;
   const p = (payload ?? {}) as Record<string, unknown>;
   const idx = lastAssistantIndex(state);
+  // Track the gateway session id carried by event frames so the host can
+  // actively refresh usage (session.usage) without waiting for a fresh
+  // session.info emit. `action.sessionId` is the frame-level id; we also
+  // mirror the durable stored_session_id from session.info frames below.
+  const eventSessionId = action.sessionId ?? state.lastEventSessionId;
 
   switch (eventType) {
     case "session.info": {
@@ -355,6 +370,7 @@ export function chatEventStreamReducer(
           : state.usage;
       return {
         ...state,
+        lastEventSessionId: eventSessionId,
         sessionTitle: asString(p.title) ?? state.sessionTitle,
         activeSessionId: nextSessionId,
         usage,
@@ -721,6 +737,7 @@ export function useChatEventStream(channel: string) {
     clarify: null,
     usage: null,
     compacting: false,
+    lastEventSessionId: null,
   }));
 
   // Composer hook: locally append the user's own bubble (the /api/events
@@ -776,6 +793,29 @@ export function useChatEventStream(channel: string) {
   // but setting it locally makes the banner appear instantly).
   const setCompacting = useCallback((compacting: boolean) => {
     dispatch({ type: "compacting", compacting });
+  }, []);
+
+  // Actively fetch the session's context usage over the JSON-RPC sidecar.
+  // The initial session.info frame can be emitted before the browser has
+  // subscribed to the events feed, so relying on events alone can leave the
+  // usage bar blank forever. session.usage returns the same snapshot as
+  // session.info.usage (context_used/max/percent/compressions/...).
+  // `sid` is the gateway session id (from the events frame) — required by
+  // the backend to resolve the live session record.
+  const refreshUsage = useCallback(async (sid: string) => {
+    if (!sid) return;
+    try {
+      const { GatewayClient } = await import("@/lib/gatewayClient");
+      const gw = new GatewayClient();
+      await gw.connect();
+      const res = await gw.request<unknown>("session.usage", { session_id: sid });
+      gw.close();
+      if (res && typeof res === "object") {
+        dispatch({ type: "usage", usage: res as ChatUsage });
+      }
+    } catch {
+      // Usage is a best-effort readout — events keep flowing regardless.
+    }
   }, []);
 
   useEffect(() => {
@@ -872,5 +912,6 @@ export function useChatEventStream(channel: string) {
     respondClarify,
     resetChat,
     setCompacting,
+    refreshUsage,
   };
 }

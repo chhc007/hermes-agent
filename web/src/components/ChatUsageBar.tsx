@@ -25,6 +25,9 @@ export function ChatUsageBar({
   className?: string;
 }) {
   const { t } = useI18n();
+  // usage is null only before the first session.info frame; once the session
+  // is known we render the bar even at 0 tokens so the user always sees the
+  // context readout (mirrors the TUI status bar).
   if (!usage) return null;
 
   const pct = usage.context_percent;
@@ -33,8 +36,7 @@ export function ChatUsageBar({
     ? `${fmtK(usage.context_used ?? 0)}/${fmtK(usage.context_max ?? 0)} tok`
     : (usage.total ?? 0) > 0
       ? `${fmtK(usage.total ?? 0)} tok`
-      : "";
-  if (!label && !(usage.compressions ?? 0)) return null;
+      : "0 tok";
 
   const compressions = typeof usage.compressions === "number" ? usage.compressions : 0;
   const pctClamped = hasGauge && pct != null ? Math.max(0, Math.min(100, pct)) : 0;

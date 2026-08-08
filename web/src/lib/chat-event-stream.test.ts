@@ -30,6 +30,7 @@ function init(messages: ChatEventStreamState["messages"] = []): ChatEventStreamS
     clarify: null,
     usage: null,
     compacting: false,
+    lastEventSessionId: null,
   };
 }
 

@@ -405,6 +405,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const loadHistoryRef = useRef(chatStream.loadHistory);
   const respondClarifyRef = useRef(chatStream.respondClarify);
   const setCompactingRef = useRef(chatStream.setCompacting);
+  const refreshUsageRef = useRef(chatStream.refreshUsage);
   // Stable refs for the async handlers below — sendUserMessage/loadHistory are stable.
   useEffect(() => {
     sendUserMessageRef.current = chatStream.sendUserMessage;
@@ -413,7 +414,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     respondClarifyRef.current = chatStream.respondClarify;
     resetChatRef.current = chatStream.resetChat;
     setCompactingRef.current = chatStream.setCompacting;
-  }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify, chatStream.resetChat, chatStream.setCompacting]);
+    refreshUsageRef.current = chatStream.refreshUsage;
+  }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify, chatStream.resetChat, chatStream.setCompacting, chatStream.refreshUsage]);
 
   // Slash-command completion: the composer text flows up to the popover via
   // onInputChange, and keys are forwarded through onCompletionKey. The
@@ -587,6 +589,31 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       cancelled = true;
     };
   }, [chatStream.activeSessionId, resumeParam, scopedProfile]);
+
+  // Active usage refresh. The PTY emits session.info at spawn — before the
+  // browser has subscribed — so waiting on events alone can leave the usage
+  // bar blank. Once we have any gateway session id (frame-level sid or the
+  // stored id from a session.info), actively pull the usage snapshot. The
+  // backend replay on /api/events subscribe covers the initial mount; this
+  // covers the rest (e.g. agent still building when replay ran).
+  useEffect(() => {
+    const sid =
+      chatStream.lastEventSessionId ??
+      chatStream.activeSessionId ??
+      resumeParam;
+    if (!sid) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      refreshUsageRef.current(sid).catch(() => {
+        /* best-effort */
+      });
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [chatStream.lastEventSessionId, chatStream.activeSessionId, resumeParam]);
 
   useEffect(() => {
     if (!resumeParam) return;
