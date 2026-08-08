@@ -128,6 +128,33 @@ customCSS: |
   [data-chat-surface] [data-toolbar] .border-destructive\/50 { border-color: rgba(224, 128, 138, 0.45) !important; }
   [data-chat-surface] [data-toolbar] .text-destructive { color: #c04854 !important; }
 
+  /* 消息内容区（气泡正文）：bg-secondary/* 等 utility 在亮底上被 @theme
+     inline 内联为 color-mix(... var(--midground))，而 --midground 在亮色
+     聊天区是深紫灰 #2b2440 —— 代码块/行内代码/表格头/气泡卡片会变成
+     深紫灰"荧光块"。这里按元素/类覆盖为柔和淡紫（对齐工具栏配色）。
+     注意选择器里的 \/ 在 YAML 里要写成 \\/ 。 */
+  [data-chat-surface] .bg-secondary\/20 { background-color: rgba(143, 127, 224, 0.08) !important; }
+  [data-chat-surface] .bg-secondary\/40 { background-color: rgba(143, 127, 224, 0.06) !important; }
+  [data-chat-surface] pre {
+    background-color: rgba(143, 127, 224, 0.10) !important;
+    border-color: rgba(143, 127, 224, 0.22) !important;
+    color: #3d3560 !important;
+  }
+  [data-chat-surface] pre code {
+    background-color: transparent !important;
+    color: #3d3560 !important;
+  }
+  [data-chat-surface] code {
+    background-color: rgba(143, 127, 224, 0.12) !important;
+    color: #5a4d8f !important;
+  }
+  [data-chat-surface] th {
+    background-color: rgba(143, 127, 224, 0.07) !important;
+  }
+
+  /* 亮底上选中文字：淡紫高亮降一半浓度，避免像荧光笔 */
+  [data-chat-surface] ::selection { background: rgba(143, 127, 224, 0.16); }
+
   /* 侧栏 / 导航区略带 Mica 通透感 */
   [data-layout-variant="standard"] aside,
   [data-layout-variant="standard"] nav {
