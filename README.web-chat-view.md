@@ -49,6 +49,12 @@
 | ⛓️ **子代理 HUD** | `subagent.*` 事件渲染活跃子代理数（v1.7） |
 | 📋 **todo 面板** | `tool.start.todos` 渲染 agent 任务列表 + 进度（v1.7） |
 | 📺 **会话状态栏** | 忙碌指示 + 会话时长 + cwd + 后台任务数（`process.list` 轮询）（v1.7） |
+| 📎 **多文件上传** | 拖入/选择多个任意文件 → 附件 chips（可移除）→ 与文字一并发送；落盘 `~/workspace/uploads/`，走 `@file:` 引用通道（v1.7.5） |
+| ⚡ **流式分段即时格式化** | 工具调用/思考块之后，前面的文本段立即 Markdown 化，不必等整条消息完成（v1.7.6） |
+| ♻️ **刷新/重连恢复进行中状态** | 订阅 `/api/events` 时补发进行中回合快照（thinking + 工具卡片 + 部分文本），刷新/手机切回不再干等（v1.7.7-v1.7.8） |
+| 🕐 **实时进度轮询** | `events_ws` 每 1.5s 轮询 inflight 快照，变化即推 `turn.snapshot`（幂等替换，不闪烁）；回合结束自动收尾（v1.7.8） |
+| 🔀 **有序片段还原** | inflight 记录有序 segments（文本→工具→文本→…），刷新后按真实到达顺序还原，不再工具挤一堆/文本连成墙（v1.7.9） |
+| 🎨 **亮色聊天区配色** | win11-purple 主题下代码块/表格/行内代码/选中文字用柔和淡紫（`#8F7FE0` 系），不再深紫灰"荧光块" |
 | 🇨🇳 **完整汉化** | zh 翻译补全（63 key，不再 fallback 英文）+ 默认语言中文（浏览器 `zh*` 自动识别，localStorage 手动选择优先）+ Chat 核心组件全 i18n（输入框/气泡/澄清/媒体） |
 
 ---
@@ -278,6 +284,24 @@ text 段后面出现 tool 后它不会再增长，定型是安全的。）
 
 **测试**：`MessageBubble.test.tsx` 新增 "finalizes the pre-tool text as markdown
 while the tool is still running"。
+
+### 刷新/重连恢复进行中状态（v1.7.7）
+
+**问题**：刷新页面或手机切后台重连时，重新订阅 `/api/events` 只会收到补发的
+`session.info` 元数据；进行中的 `thinking.delta` / `tool.start` / `message.delta`
+事件（纯广播无重放）全部错过，直到 `message.complete` 才冒出完整结果——
+"处理中刷新 → 看不到调用中状态"。
+
+**实现**：
+- `tui_gateway` 的 `inflight_turn` 快照扩展：新增 `thinking`（思考累积）与
+  `tools`（工具生命周期 running→complete/error）记录；thinking/reasoning 回调、
+  工具 start/complete 时同步写入
+- `web_server` 新增补发：订阅 `/api/events` 时从快照合成标准事件帧序列
+  （`message.start → thinking.delta → tool.start/complete → message.delta`）补发，
+  前端 reducer 照常消费、重建进行中 segments
+
+**注意**：v1.7.8 将补发演进为幂等 `turn.snapshot` 帧 + 1.5s 轮询（见下），
+v1.7.7 的序列补发被取代。
 
 ### 实时进度轮询 + 幂等快照（v1.7.8）
 
