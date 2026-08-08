@@ -102,6 +102,32 @@ customCSS: |
   [data-chat-surface] .bg-success\/15 { background-color: rgba(22, 163, 74, 0.15); }
   [data-chat-surface] .bg-warning\/10 { background-color: rgba(180, 83, 9, 0.12); }
 
+  /* 工具栏（用量条 + 会话状态栏 + 操作按钮）——亮底柔和紫配色。
+     亮色聊天区把 --midground 覆盖为深紫灰 #2b2440 用于正文，而 Tailwind
+     @theme inline 把 text-primary/bg-primary/bg-secondary/border-border 等
+     utility 内联引用 --midground —— 直接导致工具栏发黑发脏。
+     这里在 [data-toolbar] 作用域内把派生色重新指向柔和紫 #8F7FE0 系。 */
+  [data-chat-surface] [data-toolbar] {
+    --toolbar-accent: #8f7fe0;                    /* 主紫 */
+    --toolbar-accent-strong: #7a6bd0;             /* 深一点（hover/填充） */
+    --toolbar-accent-soft: rgba(143, 127, 224, 0.12);  /* 淡紫底 */
+    --toolbar-accent-softer: rgba(143, 127, 224, 0.07); /* 更淡底 */
+    --toolbar-border: rgba(143, 127, 224, 0.28);  /* 紫描边 */
+    --toolbar-text: #6b6488;                      /* 次级文字：灰紫 */
+  }
+  [data-chat-surface] [data-toolbar] .text-primary { color: var(--toolbar-accent) !important; }
+  [data-chat-surface] [data-toolbar] .text-text-secondary { color: var(--toolbar-text) !important; }
+  [data-chat-surface] [data-toolbar] .text-text-tertiary { color: #8a84a8 !important; }
+  [data-chat-surface] [data-toolbar] .bg-primary\/70 { background-color: var(--toolbar-accent) !important; }
+  [data-chat-surface] [data-toolbar] .bg-primary\/10 { background-color: var(--toolbar-accent-soft) !important; }
+  [data-chat-surface] [data-toolbar] .bg-secondary\/30 { background-color: var(--toolbar-accent-soft) !important; }
+  [data-chat-surface] [data-toolbar] .bg-secondary\/40 { background-color: var(--toolbar-accent-softer) !important; }
+  [data-chat-surface] [data-toolbar] .hover\:bg-secondary\/50:hover { background-color: var(--toolbar-accent-soft) !important; }
+  [data-chat-surface] [data-toolbar] .border-border\/60 { border-color: var(--toolbar-border) !important; }
+  [data-chat-surface] [data-toolbar] .bg-destructive\/15 { background-color: rgba(224, 128, 138, 0.14) !important; }
+  [data-chat-surface] [data-toolbar] .border-destructive\/50 { border-color: rgba(224, 128, 138, 0.45) !important; }
+  [data-chat-surface] [data-toolbar] .text-destructive { color: #c04854 !important; }
+
   /* 侧栏 / 导航区略带 Mica 通透感 */
   [data-layout-variant="standard"] aside,
   [data-layout-variant="standard"] nav {

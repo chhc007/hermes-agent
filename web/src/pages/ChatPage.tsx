@@ -1978,7 +1978,10 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               data-chat-surface
               className="flex min-h-0 flex-1 flex-col gap-2"
             >
-              <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1">
+              <div
+                data-toolbar
+                className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-1"
+              >
                 {/* Row 1 (phone) / inline (desktop): usage bar */}
                 <ChatUsageBar usage={chatStream.usage} className="min-w-0 px-1 sm:px-3" />
                 {/* Full status strip — on phones this wraps to its own second
