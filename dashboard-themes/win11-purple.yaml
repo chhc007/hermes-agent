@@ -1,23 +1,24 @@
 # ~/.hermes/dashboard-themes/win11-purple.yaml
 # Windows 11 Fluent 风格 · 柔和紫 · 护眼
-# 深色 Mica 材质 + 紫罗兰强调色，接近 Win11 默认壁纸的紫色调
+# v2：整体降低饱和度/对比度，更柔和不刺眼
+# 深色 Mica 材质 + 柔和紫罗兰强调色，接近 Win11 默认壁纸的紫色调
 name: win11-purple
 label: Win11 Purple
 description: Windows 11 Fluent 风格 — 柔和紫 · 深色 Mica · 护眼大字
 
-# 3 层调色板：深紫灰画布（Mica 深色材质）+ 淡紫白文字 + 紫色光晕
+# 3 层调色板：柔和深紫灰画布（Mica 深色材质）+ 低亮度淡紫白文字 + 轻光晕
 palette:
   background:
-    hex: "#1c1729"        # 深紫灰（比纯黑柔和，Mica 深色基调）
+    hex: "#211c30"        # 柔和深紫灰（比 v1 稍亮稍灰，降低与文字的对比）
     alpha: 1.0
   midground:
-    hex: "#ece8f6"        # 主文字 / 强调：淡紫白（Win11 柔和白）
+    hex: "#d6d0ea"        # 主文字：低亮度淡紫白（对比度约 11:1，舒适而非刺眼）
     alpha: 1.0
   foreground:
     hex: "#ffffff"
     alpha: 0.0            # 顶层高光默认不可见
-  warmGlow: "rgba(139, 92, 246, 0.28)"   # 紫色光晕（模拟 Mica 壁纸透出）
-  noiseOpacity: 0.35      # 轻微颗粒，更细腻
+  warmGlow: "rgba(167, 139, 250, 0.16)"   # 淡紫光晕（比 v1 降 40% 浓度）
+  noiseOpacity: 0.25      # 颗粒更淡，画面更干净
 
 typography:
   fontSans: '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif'
@@ -33,49 +34,49 @@ layout:
 
 layoutVariant: standard
 
-# 紫色强调色（Win11 默认紫 #8B5CF6 系）
+# 柔和紫色强调色（v2：从 #8B5CF6 降饱和到 #8F7FE0 系，接近 Win11 原生紫）
 colorOverrides:
-  primary: "#8b5cf6"
+  primary: "#8f7fe0"
   primaryForeground: "#ffffff"
-  accent: "#a78bfa"
-  accentForeground: "#1c1729"
-  secondary: "rgba(139, 92, 246, 0.16)"
-  secondaryForeground: "#ece8f6"
-  muted: "rgba(255, 255, 255, 0.06)"
-  mutedForeground: "#b9b1cf"
-  card: "rgba(255, 255, 255, 0.045)"
-  cardForeground: "#ece8f6"
-  popover: "#241d38"
-  popoverForeground: "#ece8f6"
-  border: "rgba(255, 255, 255, 0.08)"
-  input: "rgba(255, 255, 255, 0.10)"
-  ring: "#8b5cf6"
-  destructive: "#f47b7b"
+  accent: "#a99be8"
+  accentForeground: "#211c30"
+  secondary: "rgba(143, 127, 224, 0.14)"
+  secondaryForeground: "#e2dcf2"
+  muted: "rgba(255, 255, 255, 0.05)"
+  mutedForeground: "#a39bc0"
+  card: "rgba(255, 255, 255, 0.035)"
+  cardForeground: "#d6d0ea"
+  popover: "#282238"
+  popoverForeground: "#d6d0ea"
+  border: "rgba(255, 255, 255, 0.07)"
+  input: "rgba(255, 255, 255, 0.09)"
+  ring: "#8f7fe0"
+  destructive: "#e8808a"
   destructiveForeground: "#ffffff"
-  success: "#4ade80"
-  warning: "#fbbf24"
+  success: "#7ad9a0"
+  warning: "#e8c06a"
 
-# 半透明卡片 + 柔和阴影（Win11 Mica 质感）
+# 半透明卡片 + 柔和阴影（v2：阴影更轻、卡片更淡）
 componentStyles:
   card:
-    background: "rgba(255, 255, 255, 0.045)"
-    boxShadow: "0 4px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06)"
+    background: "rgba(255, 255, 255, 0.035)"
+    boxShadow: "0 3px 16px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.05)"
   header:
-    background: "rgba(28, 23, 41, 0.72)"
-    backdropFilter: "blur(18px) saturate(150%)"
-    borderBottom: "1px solid rgba(255, 255, 255, 0.07)"
+    background: "rgba(33, 28, 48, 0.7)"
+    backdropFilter: "blur(18px) saturate(140%)"
+    borderBottom: "1px solid rgba(255, 255, 255, 0.06)"
   sidebar:
-    background: "rgba(255, 255, 255, 0.03)"
+    background: "rgba(255, 255, 255, 0.025)"
   tab:
     borderRadius: "0.5rem"
 
 customCSS: |
-  /* Win11 Mica 模拟：柔和紫色光晕透出，替代纯色背景 */
+  /* Win11 Mica 模拟：淡紫色光晕透出（v2 浓度大幅降低，更柔和） */
   body {
     background:
-      radial-gradient(1100px 700px at 15% -10%, rgba(139, 92, 246, 0.16), transparent 60%),
-      radial-gradient(900px 600px at 105% 15%, rgba(167, 139, 250, 0.12), transparent 55%),
-      radial-gradient(700px 500px at 50% 110%, rgba(99, 102, 241, 0.10), transparent 60%),
+      radial-gradient(1100px 700px at 15% -10%, rgba(167, 139, 250, 0.10), transparent 60%),
+      radial-gradient(900px 600px at 105% 15%, rgba(169, 155, 232, 0.08), transparent 55%),
+      radial-gradient(700px 500px at 50% 110%, rgba(143, 127, 224, 0.06), transparent 60%),
       var(--background) !important;
     background-attachment: fixed !important;
   }
@@ -86,7 +87,7 @@ customCSS: |
     backdrop-filter: blur(8px);
   }
 
-  /* 滚动条 — 更细更柔，紫色 hover */
+  /* 滚动条 — 更细更柔，低饱和紫 */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -95,19 +96,19 @@ customCSS: |
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(139, 92, 246, 0.28);
+    background: rgba(143, 127, 224, 0.22);
     border-radius: 8px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(139, 92, 246, 0.45);
+    background: rgba(143, 127, 224, 0.36);
   }
 
-  /* 选中文字 — 紫色高亮 */
+  /* 选中文字 — 低饱和紫高亮 */
   ::selection {
-    background: rgba(139, 92, 246, 0.35);
+    background: rgba(143, 127, 224, 0.28);
   }
 
-  /* 链接 hover 渐变紫，Win11 风格 */
+  /* 链接 hover — 柔和紫下划线 */
   a:hover {
-    text-decoration-color: rgba(167, 139, 250, 0.8);
+    text-decoration-color: rgba(169, 155, 232, 0.7);
   }
