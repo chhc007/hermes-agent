@@ -56,6 +56,8 @@
 | 🔀 **有序片段还原** | inflight 记录有序 segments（文本→工具→文本→…），刷新后按真实到达顺序还原，不再工具挤一堆/文本连成墙（v1.7.9） |
 | 🎨 **亮色聊天区配色** | win11-purple 主题下代码块/表格/行内代码/选中文字用柔和淡紫（`#8F7FE0` 系），不再深紫灰"荧光块" |
 | 📱 **手机端紧凑头部** | 移动端两层 header 瘦身：brand 栏 `min-h-14`→`min-h-11`、标题行 py 12px→6px，聊天区多出 ~24px 可用空间，功能全保留 |
+| 🧹 **幽灵连接清理** | events 轮询推送失败自动 `close(1011)` 断开半死 socket，强制浏览器重连换新；subscribe/unsubscribe 全日志（v1.7.10） |
+| ⏹️ **Stop 按钮实时点亮** | `turn.snapshot` 的 streaming 标志驱动 `meta.running`（无需等 session.info），任务开始即出现停止按钮，结束自动复位（v1.7.11） |
 | 🇨🇳 **完整汉化** | zh 翻译补全（63 key，不再 fallback 英文）+ 默认语言中文（浏览器 `zh*` 自动识别，localStorage 手动选择优先）+ Chat 核心组件全 i18n（输入框/气泡/澄清/媒体） |
 
 ---
