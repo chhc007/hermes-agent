@@ -52,7 +52,7 @@ export function ChatUsageBar({
     >
       {hasGauge && (
         <div
-          className="relative h-1 w-16 overflow-hidden rounded-full bg-secondary/40"
+          className="relative hidden h-1 w-16 overflow-hidden rounded-full bg-secondary/40 sm:block"
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
@@ -72,10 +72,10 @@ export function ChatUsageBar({
           />
         </div>
       )}
-      {label && <span className="font-mono tabular-nums">{label}</span>}
+      {label && <span className="truncate font-mono tabular-nums">{label}</span>}
       {compressions > 0 && (
         <span
-          className="inline-flex items-center gap-1 rounded border border-border/60 bg-secondary/30 px-1 py-0.5"
+          className="hidden items-center gap-1 rounded border border-border/60 bg-secondary/30 px-1 py-0.5 sm:inline-flex"
           title={t.chat.compressionsTitle ?? "Context compressions"}
         >
           🗜️×{compressions}
