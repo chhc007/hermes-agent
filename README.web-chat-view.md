@@ -431,7 +431,16 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.6**（当前，稳定）：**终端会话同步 + 上下文用量/压缩兼容** —
+- **v1.6.1**（当前，稳定）：**上下文用量条真正显示** — 用户反馈「看不到上下文用量」。
+  根因：① PTY 启动时发出的初始 `session.info` 早于浏览器订阅 `/api/events`
+  （实时广播、无重放），usage 一直是 null；② 新会话 usage 全 0 时组件 return null
+  不渲染。修复：后端 `/api/events` 新订阅者接入时从 per-channel active-session
+  文件 + 内嵌 gateway 的 live session 记录**补发一次 session.info**（时序无关）；
+  `ChatUsageBar` 有 usage 即渲染（0 token 兜底）；事件流跟踪帧级 `session_id`
+  （`lastEventSessionId`），ChatPage 拿到会话 id 后调 `session.usage` RPC 主动
+  刷新（覆盖 agent 构建空窗）。验证：订阅 events 立即收到完整 usage
+  （context_used 371890 / max 1M / 37%）。见上方「故障排查」。
+- **v1.6**：**终端会话同步 + 上下文用量/压缩兼容** —
   1) **内部切会话同步**：TUI 内 `/resume`、`/sessions`、`/compact`（session key
   旋转）后，`session.info` 携带新 `stored_session_id`，气泡 reducer 检测到
   会话切换即清空旧消息，ChatPage 自动重拉该会话历史（不 rewrite URL resume，
