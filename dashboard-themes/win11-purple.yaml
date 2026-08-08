@@ -1,0 +1,113 @@
+# ~/.hermes/dashboard-themes/win11-purple.yaml
+# Windows 11 Fluent 风格 · 柔和紫 · 护眼
+# 深色 Mica 材质 + 紫罗兰强调色，接近 Win11 默认壁纸的紫色调
+name: win11-purple
+label: Win11 Purple
+description: Windows 11 Fluent 风格 — 柔和紫 · 深色 Mica · 护眼大字
+
+# 3 层调色板：深紫灰画布（Mica 深色材质）+ 淡紫白文字 + 紫色光晕
+palette:
+  background:
+    hex: "#1c1729"        # 深紫灰（比纯黑柔和，Mica 深色基调）
+    alpha: 1.0
+  midground:
+    hex: "#ece8f6"        # 主文字 / 强调：淡紫白（Win11 柔和白）
+    alpha: 1.0
+  foreground:
+    hex: "#ffffff"
+    alpha: 0.0            # 顶层高光默认不可见
+  warmGlow: "rgba(139, 92, 246, 0.28)"   # 紫色光晕（模拟 Mica 壁纸透出）
+  noiseOpacity: 0.35      # 轻微颗粒，更细腻
+
+typography:
+  fontSans: '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif'
+  fontMono: '"Cascadia Code", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace'
+  fontDisplay: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif'
+  baseSize: "17px"        # 默认 15px → 放大到 17px，护眼
+  lineHeight: "1.6"
+  letterSpacing: "0"
+
+layout:
+  radius: "0.75rem"       # Fluent 圆角（比默认 0.5rem 更圆润）
+  density: comfortable
+
+layoutVariant: standard
+
+# 紫色强调色（Win11 默认紫 #8B5CF6 系）
+colorOverrides:
+  primary: "#8b5cf6"
+  primaryForeground: "#ffffff"
+  accent: "#a78bfa"
+  accentForeground: "#1c1729"
+  secondary: "rgba(139, 92, 246, 0.16)"
+  secondaryForeground: "#ece8f6"
+  muted: "rgba(255, 255, 255, 0.06)"
+  mutedForeground: "#b9b1cf"
+  card: "rgba(255, 255, 255, 0.045)"
+  cardForeground: "#ece8f6"
+  popover: "#241d38"
+  popoverForeground: "#ece8f6"
+  border: "rgba(255, 255, 255, 0.08)"
+  input: "rgba(255, 255, 255, 0.10)"
+  ring: "#8b5cf6"
+  destructive: "#f47b7b"
+  destructiveForeground: "#ffffff"
+  success: "#4ade80"
+  warning: "#fbbf24"
+
+# 半透明卡片 + 柔和阴影（Win11 Mica 质感）
+componentStyles:
+  card:
+    background: "rgba(255, 255, 255, 0.045)"
+    boxShadow: "0 4px 24px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.06)"
+  header:
+    background: "rgba(28, 23, 41, 0.72)"
+    backdropFilter: "blur(18px) saturate(150%)"
+    borderBottom: "1px solid rgba(255, 255, 255, 0.07)"
+  sidebar:
+    background: "rgba(255, 255, 255, 0.03)"
+  tab:
+    borderRadius: "0.5rem"
+
+customCSS: |
+  /* Win11 Mica 模拟：柔和紫色光晕透出，替代纯色背景 */
+  body {
+    background:
+      radial-gradient(1100px 700px at 15% -10%, rgba(139, 92, 246, 0.16), transparent 60%),
+      radial-gradient(900px 600px at 105% 15%, rgba(167, 139, 250, 0.12), transparent 55%),
+      radial-gradient(700px 500px at 50% 110%, rgba(99, 102, 241, 0.10), transparent 60%),
+      var(--background) !important;
+    background-attachment: fixed !important;
+  }
+
+  /* 侧栏 / 导航区略带 Mica 通透感 */
+  [data-layout-variant="standard"] aside,
+  [data-layout-variant="standard"] nav {
+    backdrop-filter: blur(8px);
+  }
+
+  /* 滚动条 — 更细更柔，紫色 hover */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(139, 92, 246, 0.28);
+    border-radius: 8px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(139, 92, 246, 0.45);
+  }
+
+  /* 选中文字 — 紫色高亮 */
+  ::selection {
+    background: rgba(139, 92, 246, 0.35);
+  }
+
+  /* 链接 hover 渐变紫，Win11 风格 */
+  a:hover {
+    text-decoration-color: rgba(167, 139, 250, 0.8);
+  }

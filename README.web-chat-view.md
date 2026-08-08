@@ -369,6 +369,28 @@ grep "pty resume drift" ~/.hermes/logs/gui.log
 
 ---
 
+## 🎨 自定义主题：Win11 Purple
+
+> 本 fork 附带一个官方机制的自定义 dashboard 主题（见 `dashboard-themes/` 目录）。
+> 纯 YAML 配置、零代码改动，后端自动发现，可在主题切换器里随时切换。
+
+**Win11 Purple** — Windows 11 Fluent 风格深色主题：Mica 材质深紫背景、
+紫罗兰强调色（`#8B5CF6`）、半透明卡片 + 柔和阴影、17px 护眼大字体。
+
+```bash
+# 安装（官方路径）
+mkdir -p ~/.hermes/dashboard-themes
+cp dashboard-themes/win11-purple.yaml ~/.hermes/dashboard-themes/
+
+# 激活
+hermes config set dashboard.theme win11-purple
+```
+
+也可在 dashboard 页面右上角调色板图标切换（持久化到 `config.yaml`）。
+完整主题资产与字段说明见 [`dashboard-themes/README.md`](./dashboard-themes/README.md)。
+
+---
+
 ## 🧪 开发
 
 ```bash
