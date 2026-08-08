@@ -366,6 +366,20 @@ v1.7.7 的序列补发被取代。
 **验证**：`scripts/run_tests.sh tests/hermes_cli/test_web_server.py` → 147/147 全绿。
 用户实测（单标签 + 刷新）气泡 chat 实时同步 ✓。
 
+### Stop 按钮实时显示（v1.7.11）
+
+**问题**：agent 开始跑任务时停止按钮不出现，刷新后才出现。
+**根因**：Stop 按钮基于 `meta.running`，但该字段只在 `session.info` 事件更新；
+`turn.snapshot` 轮询帧（streaming 标志）未更新它，`message.complete` 也不重置。
+实时事件不可靠时 running 状态无法到达前端 → 按钮不实时出现；刷新后
+session.info 补发才点亮。
+**修复**（`chat-event-stream.ts` reducer）：
+- `turn.snapshot` → `meta.running = streaming`（即使 segments 为空也更新，
+  thinking/tool 帧可能晚于回合开始）
+- `message.complete` → 重置 `meta.running = false`（回合结束按钮消失）
+**验证**：前端新增 Stop 按钮驱动用例（snapshot 点亮 / complete 复位）；
+357 测试全绿。纯前端，刷新即生效。
+
 ### 后端改动（唯一一处）
 
 `hermes_cli/web_server.py` 的 `/api/media`：

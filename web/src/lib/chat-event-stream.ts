@@ -606,6 +606,7 @@ export function chatEventStreamReducer(
       if (idx >= 0) {
         return {
           ...state,
+          meta: { ...state.meta, running: false },
           messages: state.messages.map((m, i) =>
             i !== idx ? (m.status === "streaming" ? { ...m, status: "complete" as const } : m) : finalize(m),
           ),
@@ -616,6 +617,7 @@ export function chatEventStreamReducer(
       const last = fresh.messages.length - 1;
       return {
         ...fresh,
+        meta: { ...fresh.meta, running: false },
         messages: fresh.messages.map((m, i) => (i === last ? finalize(m) : m)),
       };
     }
@@ -820,12 +822,19 @@ export function chatEventStreamReducer(
         if (assistant) segments.push({ kind: "text" as const, text: assistant });
       }
 
-      if (!segments.length) return state;
+      // The snapshot's streaming flag is the authoritative "turn in
+      // progress" signal — drive the Stop button from it even when no
+      // segments exist yet (thinking/tool frames may trail the turn start).
+      const runningState = {
+        ...state,
+        meta: { ...state.meta, running: streaming },
+      };
+      if (!segments.length) return runningState;
 
-      const liveIdx = state.messages.findIndex(
+      const liveIdx = runningState.messages.findIndex(
         (m) => m.role === "assistant" && m.status === "streaming",
       );
-      const base = liveIdx >= 0 ? state : openStreamingMessage(state);
+      const base = liveIdx >= 0 ? runningState : openStreamingMessage(runningState);
       const targetIdx = liveIdx >= 0 ? liveIdx : base.messages.length - 1;
       return {
         ...base,

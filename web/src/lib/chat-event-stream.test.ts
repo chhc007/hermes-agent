@@ -293,6 +293,26 @@ describe("turn.snapshot", () => {
     expect((segs[1] as ToolSegment).status).toBe("running");
     expect((segs[3] as { text?: string }).text).toBe("然后继续说");
   });
+
+  it("drives the Stop button: snapshot streaming=true sets meta.running, complete resets it", () => {
+    // Turn starts: snapshot with no segments yet still flips running on.
+    const running = reduce([["turn.snapshot", { streaming: true }]]);
+    expect(running.meta.running).toBe(true);
+
+    // In-progress snapshot keeps it on.
+    const mid = reduce([
+      ["turn.snapshot", { streaming: true }],
+      ["turn.snapshot", { segments: [{ kind: "text", text: "hi" }], streaming: true }],
+    ]);
+    expect(mid.meta.running).toBe(true);
+
+    // Turn end: complete resets it so the Stop button disappears.
+    const done = reduce([
+      ["turn.snapshot", { streaming: true }],
+      ["message.complete", { text: "done" }],
+    ]);
+    expect(done.meta.running).toBe(false);
+  });
 });
 
 describe("reasoning", () => {
