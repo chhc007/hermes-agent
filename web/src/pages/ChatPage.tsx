@@ -79,9 +79,14 @@ import {
 } from "@/lib/pty-mobile-input";
 import {
   imageFilesFromTransfer,
-  transferMayContainImage,
   uploadChatImage,
 } from "@/lib/chatImagePaste";
+import {
+  filesFromTransfer,
+  formatRefValue,
+  transferHasFiles,
+  uploadChatFiles,
+} from "@/lib/chatFileUpload";
 import { maybeReloadForLoopbackWsAuthFailure } from "@/lib/dashboard-auth-reload";
 import { PluginSlot } from "@/plugins";
 import { useTheme } from "@/themes";
@@ -771,12 +776,35 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // commands we still forward them (so the command executes), but surface a
   // local hint bubble pointing the user at the Terminal view.
   const sendChatPrompt = useCallback(
-    (text: string) => {
+    async (text: string, attachments: File[] = []) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         return false;
       }
-      ws.send(text);
+      // Upload staged attachments first, then embed their server paths as
+      // @file: refs so the TUI expands them (text inlined, binary surfaced
+      // for tools) together with the typed prompt — one submit, no races.
+      let refLines: string[] = [];
+      if (attachments.length) {
+        try {
+          const uploaded = await uploadChatFiles(attachments);
+          refLines = uploaded.map((u) => `@file:${formatRefValue(u.path)}`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setBanner(`附件上传失败: ${message}`);
+          return false;
+        }
+      }
+      const fullText = [...refLines, text].filter(Boolean).join("\n");
+      if (!fullText.trim()) return true;
+      // Re-check the socket after the (async) upload — it may have dropped
+      // or reconnected while we were waiting.
+      const live = wsRef.current;
+      if (!live || live.readyState !== WebSocket.OPEN) {
+        setBanner("Chat is not connected — try again.");
+        return false;
+      }
+      live.send(fullText);
       window.setTimeout(() => {
         const s = wsRef.current;
         if (s && s.readyState === WebSocket.OPEN) s.send("\r");
@@ -796,8 +824,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         );
       }
       // Locally-optimistic user bubble: the /api/events feed carries no
-      // user-input frames, so the composer appends its own message.
-      sendUserMessageRef.current(text);
+      // user-input frames, so the composer appends its own message. Show a
+      // paperclip summary for attachments instead of raw @file: paths.
+      const display =
+        attachments.length > 0
+          ? `${attachments.map((f) => `📎 ${f.name}`).join("  ")}${text ? `\n${text}` : ""}`
+          : text;
+      sendUserMessageRef.current(display);
       return true;
     },
     [],
@@ -849,33 +882,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       sendChatPromptRef.current(lastUser.text);
     }
   }, [undoLast]);
-
-  // Route image files from the chat composer through the same upload→/image
-  // attach pipeline the xterm paste/drop path uses.
-  const handleChatImages = useCallback(
-    (files: File[]) => {
-      if (!files.length) return;
-      void (async () => {
-        for (const file of files) {
-          const uploaded = await uploadChatImage(file, scopedProfile);
-          const ws = wsRef.current;
-          if (!ws || ws.readyState !== WebSocket.OPEN) {
-            setBanner("Image uploaded, but chat is not connected — try again.");
-            return;
-          }
-          ws.send(`/image ${uploaded.path}`);
-          await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
-          const s = wsRef.current;
-          if (!s || s.readyState !== WebSocket.OPEN) return;
-          s.send("\r");
-        }
-      })().catch((err: unknown) => {
-        const message = err instanceof Error ? err.message : String(err);
-        setBanner(`Image upload failed: ${message}`);
-      });
-    },
-    [scopedProfile],
-  );
 
   useEffect(() => {
     // Don't spawn the chat PTY (and the TUI/agent bootstrap it triggers)
@@ -1032,16 +1038,18 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       uploadAndAttachImages(files);
     };
     const handleBrowserDragOver = (ev: DragEvent) => {
-      if (!transferMayContainImage(ev.dataTransfer)) return;
+      if (!transferHasFiles(ev.dataTransfer)) return;
       ev.preventDefault();
       if (ev.dataTransfer) ev.dataTransfer.dropEffect = "copy";
     };
     const handleBrowserDrop = (ev: DragEvent) => {
-      const files = imageFilesFromTransfer(ev.dataTransfer);
+      const files = filesFromTransfer(ev.dataTransfer);
       if (!files.length) return;
       ev.preventDefault();
       ev.stopPropagation();
-      uploadAndAttachImages(files);
+      // Stage every dropped file (any type) into the composer's attachment
+      // list; they ride along with the user's typed prompt on submit.
+      chatInputRef.current?.appendFiles(files);
     };
     host.addEventListener("paste", handleBrowserPaste, { capture: true });
     host.addEventListener("dragover", handleBrowserDragOver, { capture: true });
@@ -2053,7 +2061,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                 <ChatInput
                   ref={chatInputRef}
                   onSend={sendChatPrompt}
-                  onImages={handleChatImages}
                   onInputChange={setComposerText}
                   onCompletionKey={handleCompletionKey}
                   disabled={ptyState !== "open"}

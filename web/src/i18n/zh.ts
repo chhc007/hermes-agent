@@ -197,6 +197,8 @@ export const zh: Translations = {
 
   chat: {
     attachImage: "附加图片",
+    attachFile: "附加文件",
+    removeAttachment: "移除附件",
     inputPlaceholder: "给 hermes 发消息…（Enter 发送，Shift+Enter 换行）",
     collapseInput: "收起输入框",
     expandInput: "展开输入框",

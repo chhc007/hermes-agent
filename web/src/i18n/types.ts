@@ -217,6 +217,8 @@ export interface Translations {
   // ── Chat / bubbles ──
   chat: {
     attachImage: string;
+    attachFile: string;
+    removeAttachment: string;
     inputPlaceholder: string;
     collapseInput: string;
     expandInput: string;

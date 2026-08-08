@@ -2452,6 +2452,74 @@ async def download_managed_file(request: Request, path: str):
     )
 
 
+# ── Chat file uploads (multi-file, any type) ─────────────────────────
+# Browser-dropped chat attachments land here so the embedded TUI agent can
+# reach them by path. The directory lives under ~/workspace so the agent's
+# @file: reference expansion (allowed_root = session cwd) can inline text
+# files and hand binary files to tools by absolute path.
+_CHAT_FILE_UPLOAD_MAX_BYTES = 100 * 1024 * 1024  # 100 MB per file
+_CHAT_UPLOADS_DIR = Path(os.path.expanduser("~/workspace/uploads"))
+
+
+def _sanitize_chat_upload_filename(name: str) -> str:
+    """Basename-only, control-char-free; keep CJK/spaces the user expects."""
+    candidate = Path(str(name or "").strip()).name
+    candidate = re.sub(r"[\x00-\x1f]+", "_", candidate)
+    candidate = candidate.strip().strip(".")
+    return candidate or "upload"
+
+
+@app.post("/api/chat/files-upload")
+async def upload_chat_files(files: list[UploadFile] = File(...)):
+    """Persist browser-dropped chat attachments under ``~/workspace/uploads/``.
+
+    The dashboard /chat composer collects multiple dropped files and sends
+    them here as multipart/form-data (one ``files`` part per file), then the
+    page embeds the returned absolute paths as ``@file:<path>`` references in
+    the next prompt. The embedded TUI expands those refs (text files inlined,
+    binary files surfaced as a tool-readable block) — the same pipeline the
+    desktop app uses for local attachments.
+    """
+    try:
+        _CHAT_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Upload directory is not writable")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not create upload directory: {exc}")
+
+    results: list[dict] = []
+    for file in files or []:
+        data = await file.read()
+        if len(data) > _CHAT_FILE_UPLOAD_MAX_BYTES:
+            mb = _CHAT_FILE_UPLOAD_MAX_BYTES // (1024 * 1024)
+            raise HTTPException(status_code=413, detail=f"File is too large; cap is {mb} MB per file")
+        if not data:
+            continue
+
+        stem = _sanitize_chat_upload_filename(file.filename or "upload")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        target = _CHAT_UPLOADS_DIR / f"{ts}_{secrets.token_hex(4)}_{stem}"
+
+        try:
+            target.write_bytes(data)
+        except PermissionError:
+            raise HTTPException(status_code=403, detail="Upload directory is not writable")
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Could not write file: {exc}")
+
+        mime_type = file.content_type or mimetypes.guess_type(stem)[0] or "application/octet-stream"
+        results.append(
+            {
+                "path": str(target),
+                "name": target.name,
+                "bytes": len(data),
+                "mime_type": mime_type,
+            }
+        )
+
+    return {"ok": True, "files": results}
+
+
 @app.post("/api/files/upload")
 async def upload_managed_file(payload: ManagedFileUpload, request: Request):
     policy, target, display_path = _resolve_managed_path(payload.path, request, for_write=True)

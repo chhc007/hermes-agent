@@ -843,9 +843,45 @@ class TestWebServerEndpoints:
 
     # ── POST /api/chat/image-upload (browser clipboard/drop images) ─────
 
+    def test_chat_files_upload_persists_multiple_files(self, monkeypatch, tmp_path):
+        """Multi-file chat upload writes every file under the upload dir."""
+        from hermes_cli import web_server
 
+        monkeypatch.setattr(web_server, "_CHAT_UPLOADS_DIR", tmp_path)
 
+        resp = self.client.post(
+            "/api/chat/files-upload",
+            files=[
+                ("files", ("报告.xlsx", b"spreadsheet-bytes", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")),
+                ("files", ("shot.png", b"\x89PNG\r\n\x1a\nfake", "image/png")),
+            ],
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["ok"] is True
+        assert len(data["files"]) == 2
 
+        written = sorted(p.name for p in tmp_path.iterdir() if p.is_file())
+        assert len(written) == 2
+        assert any("报告.xlsx" in name for name in written)
+        assert any("shot.png" in name for name in written)
+
+        for entry in data["files"]:
+            assert entry["path"].startswith(str(tmp_path))
+            assert entry["bytes"] > 0
+            assert entry["mime_type"]
+
+    def test_chat_files_upload_rejects_oversized_file(self, monkeypatch, tmp_path):
+        from hermes_cli import web_server
+
+        monkeypatch.setattr(web_server, "_CHAT_UPLOADS_DIR", tmp_path)
+        monkeypatch.setattr(web_server, "_CHAT_FILE_UPLOAD_MAX_BYTES", 8)
+
+        resp = self.client.post(
+            "/api/chat/files-upload",
+            files=[("files", ("big.txt", b"x" * 64, "text/plain"))],
+        )
+        assert resp.status_code == 413
 
     # ── Dashboard font override ─────────────────────────────────────────
 

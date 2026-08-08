@@ -6,11 +6,12 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/utils", () => ({
   cn: (...args: Array<string | false | null | undefined>) => args.filter(Boolean).join(" "),
 }));
-const imageMocks = vi.hoisted(() => ({
-  imageFilesFromTransfer: vi.fn(() => [] as File[]),
-  transferMayContainImage: vi.fn(() => false),
+const fileMocks = vi.hoisted(() => ({
+  filesFromTransfer: vi.fn(() => [] as File[]),
+  transferHasFiles: vi.fn(() => false),
+  formatFileSize: vi.fn((b: number) => `${b} B`),
 }));
-vi.mock("@/lib/chatImagePaste", () => imageMocks);
+vi.mock("@/lib/chatFileUpload", () => fileMocks);
 
 import { ChatInput } from "./ChatInput";
 
@@ -53,7 +54,7 @@ describe("ChatInput", () => {
       );
     });
 
-    expect(onSend).toHaveBeenCalledWith("hello hermes");
+    expect(onSend).toHaveBeenCalledWith("hello hermes", []);
     expect((container.querySelector("textarea") as HTMLTextAreaElement).value).toBe("");
   });
 
@@ -67,7 +68,7 @@ describe("ChatInput", () => {
         new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
       );
     });
-    expect(onSend).toHaveBeenCalledWith("hi hermes");
+    expect(onSend).toHaveBeenCalledWith("hi hermes", []);
     expect(textarea.value).toBe("hi hermes");
   });
 
@@ -109,7 +110,7 @@ describe("ChatInput", () => {
     await render(<ChatInput onSend={onSend} />);
     await setValue("do a thing");
     await act(async () => sendButton().click());
-    expect(onSend).toHaveBeenCalledWith("do a thing");
+    expect(onSend).toHaveBeenCalledWith("do a thing", []);
   });
 
   it("disables input when disabled is true", async () => {
@@ -205,5 +206,87 @@ describe("ChatInput", () => {
         (b) => b.getAttribute("aria-label") === "Expand input",
       ),
     ).toBe(true);
+  });
+
+  it("stages picked files and sends them with the text", async () => {
+    const onSend = vi.fn();
+    let handle: { appendFiles: (files: File[]) => void } | null = null;
+    const ref = (h: unknown) => {
+      handle = h as { appendFiles: (files: File[]) => void };
+    };
+    await render(<ChatInput onSend={onSend} ref={ref} />);
+
+    const f1 = new File(["a"], "报告.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const f2 = new File(["b"], "shot.png", { type: "image/png" });
+    await act(async () => {
+      handle!.appendFiles([f1, f2]);
+    });
+    // chips render
+    expect(container.querySelector('[data-slot="chat-input-attachments"]')).toBeTruthy();
+    expect(container.textContent).toContain("报告.xlsx");
+    expect(container.textContent).toContain("shot.png");
+
+    await setValue("看一下这些文件");
+    await act(async () => sendButton().click());
+    expect(onSend).toHaveBeenCalledWith("看一下这些文件", [f1, f2]);
+    // composer cleared after accept
+    expect(container.querySelector('[data-slot="chat-input-attachments"]')).toBeNull();
+  });
+
+  it("sends attachments even without text", async () => {
+    const onSend = vi.fn();
+    let handle: { appendFiles: (files: File[]) => void } | null = null;
+    const ref = (h: unknown) => {
+      handle = h as { appendFiles: (files: File[]) => void };
+    };
+    await render(<ChatInput onSend={onSend} ref={ref} />);
+    const f = new File(["x"], "data.csv", { type: "text/csv" });
+    await act(async () => {
+      handle!.appendFiles([f]);
+    });
+    const btn = sendButton();
+    expect(btn.disabled).toBe(false);
+    await act(async () => btn.click());
+    expect(onSend).toHaveBeenCalledWith("", [f]);
+  });
+
+  it("keeps attachments when onSend rejects (upload failed)", async () => {
+    const onSend = vi.fn(() => false);
+    let handle: { appendFiles: (files: File[]) => void } | null = null;
+    const ref = (h: unknown) => {
+      handle = h as { appendFiles: (files: File[]) => void };
+    };
+    await render(<ChatInput onSend={onSend} ref={ref} />);
+    const f = new File(["x"], "keep.csv", { type: "text/csv" });
+    await act(async () => {
+      handle!.appendFiles([f]);
+    });
+    await setValue("retry me");
+    await act(async () => sendButton().click());
+    expect(onSend).toHaveBeenCalledWith("retry me", [f]);
+    // chips + text survive a rejected send
+    expect(container.querySelector('[data-slot="chat-input-attachments"]')).toBeTruthy();
+    expect((container.querySelector("textarea") as HTMLTextAreaElement).value).toBe("retry me");
+  });
+
+  it("removes a staged attachment via its close button", async () => {
+    const onSend = vi.fn();
+    let handle: { appendFiles: (files: File[]) => void } | null = null;
+    const ref = (h: unknown) => {
+      handle = h as { appendFiles: (files: File[]) => void };
+    };
+    await render(<ChatInput onSend={onSend} ref={ref} />);
+    const f = new File(["x"], "gone.txt", { type: "text/plain" });
+    await act(async () => {
+      handle!.appendFiles([f]);
+    });
+    const remove = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.getAttribute("aria-label")?.includes("gone.txt"),
+    );
+    expect(remove).toBeTruthy();
+    await act(async () => {
+      remove!.click();
+    });
+    expect(container.querySelector('[data-slot="chat-input-attachments"]')).toBeNull();
   });
 });

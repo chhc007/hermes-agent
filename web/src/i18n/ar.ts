@@ -165,6 +165,8 @@ export const ar = defineLocale({
 
   chat: {
     attachImage: "Attach image",
+    attachFile: "Attach file(s)",
+    removeAttachment: "Remove attachment",
     inputPlaceholder: "Message hermes… (Enter to send, Shift+Enter for a new line)",
     collapseInput: "Collapse input",
     expandInput: "Expand input",
