@@ -16437,6 +16437,12 @@ async def events_ws(ws: WebSocket) -> None:
     event_channels, event_lock = _get_event_state(ws.app)
     async with event_lock:
         event_channels.setdefault(channel, set()).add(ws)
+    _log.info(
+        "events subscribe peer=%s channel=%s subscribers=%d",
+        ws.client.host if ws.client else "?",
+        channel,
+        len(event_channels.get(channel) or set()),
+    )
 
     # Replay the current session.info to a late subscriber. The PTY emits
     # session.info once at spawn (or on session switch); a browser that opens
@@ -16471,6 +16477,20 @@ async def events_ws(ws: WebSocket) -> None:
             try:
                 await ws.send_text(frame)
             except Exception:
+                # A half-dead socket (radio handoff, stale TCP) can linger in
+                # the subscriber set without ever firing "close" — every
+                # subsequent poll would silently fail and the browser would
+                # appear "connected" while receiving nothing. Close it now so
+                # the browser's reconnect path re-subscribes on a fresh socket.
+                _log.info(
+                    "events push failed — closing peer=%s channel=%s",
+                    ws.client.host if ws.client else "?",
+                    channel,
+                )
+                try:
+                    await ws.close(code=1011)
+                except Exception:
+                    pass
                 return
             last_snapshot_hash = content_hash
             last_assistant = assistant
@@ -16499,6 +16519,11 @@ async def events_ws(ws: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
+        _log.info(
+            "events unsubscribe peer=%s channel=%s",
+            ws.client.host if ws.client else "?",
+            channel,
+        )
         async with event_lock:
             subs = event_channels.get(channel)
 

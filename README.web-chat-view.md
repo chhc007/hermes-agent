@@ -345,6 +345,27 @@ v1.7.7 的序列补发被取代。
 **验证**：`test_inflight_replay.py` 断言更新（snapshot 含 segments）；前端新增
 "text→tool→text 顺序保持"用例；后端 500 + 前端 356 全绿。
 
+### 多标签页频道打架 + 幽灵连接加固（v1.7.10）
+
+**问题**：气泡 chat 与终端不同步（聊天框无实时、刷新才出内容）。两个根因：
+1. **多标签页频道打架**：每开一个标签页就有一个独立 channel（基于 localStorage
+   attach token + resume）。若用户看的标签页 channel ≠ 当前会话 TUI 发布的
+   channel（另一标签/旧标签），该标签只显示历史（REST 加载）而收不到实时事件
+2. **幽灵连接**：events_ws 的轮询推送遇半死 socket（radio 切换、stale TCP）
+   只静默失败，连接仍留在订阅集合里 → subscribers 累积、浏览器看似"已连接"
+   实际收不到任何推送
+
+**修复**：
+- 用户侧：只保留一个标签页（多标签天然产生多 channel，旧标签必然不同步）
+- 后端加固（`web_server.py` events_ws）：
+  - 推送 `send_text` 失败 → **主动 `close(1011)`** 断开半死连接，强制浏览器
+    走重连路径换新 socket
+  - 新增 `events subscribe/unsubscribe` 日志（peer + channel + 订阅数），
+    排查连接生命周期一目了然
+
+**验证**：`scripts/run_tests.sh tests/hermes_cli/test_web_server.py` → 147/147 全绿。
+用户实测（单标签 + 刷新）气泡 chat 实时同步 ✓。
+
 ### 后端改动（唯一一处）
 
 `hermes_cli/web_server.py` 的 `/api/media`：
