@@ -16,6 +16,7 @@ vi.mock("@/i18n", () => ({
         enableVoice: "Enable voice input",
         autoSend: "Auto-send",
         voiceReply: "Voice reply",
+        sttProvider: "Recognition engine",
         settingsHint: "hint",
       },
     },
@@ -48,7 +49,7 @@ describe("VoiceSettings", () => {
   it("toggles the panel open/closed", async () => {
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: false }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local" }}
         onChange={vi.fn()}
       />,
     );
@@ -62,7 +63,7 @@ describe("VoiceSettings", () => {
   it("reflects settings state in the checkboxes", async () => {
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: true }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: true, sttProvider: "local" }}
         onChange={vi.fn()}
       />,
     );
@@ -80,7 +81,7 @@ describe("VoiceSettings", () => {
     const onChange = vi.fn();
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: false }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local" }}
         onChange={onChange}
       />,
     );
@@ -94,6 +95,32 @@ describe("VoiceSettings", () => {
       enabled: false,
       sendMode: "auto",
       voiceReply: false,
+      sttProvider: "local",
+    });
+  });
+
+  it("switches the STT provider via the select", async () => {
+    const onChange = vi.fn();
+    await render(
+      <VoiceSettings
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local" }}
+        onChange={onChange}
+      />,
+    );
+    await act(async () => {
+      settingsButton().click();
+    });
+    const select = container.querySelector("select") as HTMLSelectElement;
+    expect(select).toBeTruthy();
+    await act(async () => {
+      select.value = "mimo";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(onChange).toHaveBeenCalledWith({
+      enabled: true,
+      sendMode: "auto",
+      voiceReply: false,
+      sttProvider: "mimo",
     });
   });
 });

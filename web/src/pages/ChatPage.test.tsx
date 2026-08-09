@@ -147,6 +147,7 @@ vi.mock("@/i18n", () => ({
         enableVoice: "Enable voice input",
         autoSend: "Auto-send",
         voiceReply: "Voice reply",
+        sttProvider: "Recognition engine",
         settingsHint: "hint",
         replyActive: "Reading reply",
         stopReply: "Stop reading",

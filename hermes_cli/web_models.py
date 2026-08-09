@@ -95,6 +95,9 @@ class WhatsAppOnboardingApply(BaseModel):
 class AudioTranscriptionRequest(BaseModel):
     data_url: str
     mime_type: Optional[str] = None
+    # Optional per-request STT provider override (e.g. "local", "mimo",
+    # "groq", "openai"). Empty/None = use stt.provider from config.yaml.
+    provider: Optional[str] = None
 
 
 class ManagedFileUpload(BaseModel):

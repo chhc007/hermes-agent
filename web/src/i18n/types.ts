@@ -248,6 +248,7 @@ export interface Translations {
     enableVoice: string;
     autoSend: string;
     voiceReply: string;
+    sttProvider: string;
     settingsHint: string;
     replyActive: string;
     stopReply: string;

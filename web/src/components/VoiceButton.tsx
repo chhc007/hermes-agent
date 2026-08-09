@@ -16,12 +16,15 @@ import { cn } from "@/lib/utils";
 import {
   VoiceRecorder,
   transcribeAudio,
+  type SttProvider,
   type VoiceRecorderState,
 } from "@/lib/voiceMode";
 
 interface VoiceButtonProps {
   /** Master switch (from settings). */
   enabled: boolean;
+  /** STT provider override passed to the transcribe API. */
+  sttProvider?: SttProvider;
   onTranscript: (text: string) => void;
   onError?: (message: string) => void;
   className?: string;
@@ -29,6 +32,7 @@ interface VoiceButtonProps {
 
 export function VoiceButton({
   enabled,
+  sttProvider,
   onTranscript,
   onError,
   className,
@@ -68,7 +72,7 @@ export function VoiceButton({
         setStateBoth("transcribing");
         void (async () => {
           try {
-            const { transcript } = await transcribeAudio(blob);
+            const { transcript } = await transcribeAudio(blob, sttProvider);
             if (transcript) {
               onTranscript(transcript);
             } else {

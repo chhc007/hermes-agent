@@ -2351,17 +2351,23 @@ def _transcribe_deepinfra(file_path: str, model_name: str) -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def _transcribe_prepared_audio(file_path: str, model: Optional[str] = None) -> Dict[str, Any]:
+def _transcribe_prepared_audio(
+    file_path: str,
+    model: Optional[str] = None,
+    provider_override: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     Transcribe an audio file using the configured STT provider.
 
     Provider priority:
-      1. User config (``stt.provider`` in config.yaml)
-      2. Auto-detect: local > Groq > OpenAI > Mistral > xAI > ElevenLabs
+      1. ``provider_override`` (per-request, e.g. dashboard voice settings)
+      2. User config (``stt.provider`` in config.yaml)
+      3. Auto-detect: local > Groq > OpenAI > Mistral > xAI > ElevenLabs
 
     Args:
         file_path: Absolute path to the audio file to transcribe.
         model:     Override the model. If None, uses config or provider default.
+        provider_override: Per-request STT provider ('' or None = use config).
 
     Returns:
         dict with keys:
@@ -2396,6 +2402,23 @@ def _transcribe_prepared_audio(file_path: str, model: Optional[str] = None) -> D
         }
 
     provider = _get_provider(stt_config)
+    if provider_override:
+        # Per-request override wins (dashboard voice-settings switcher). Only
+        # accept values that resolve to a real provider — a bogus override
+        # should fall back to the configured provider, not explode.
+        override = str(provider_override).strip()
+        if override and override != "none":
+            # Validate against built-ins + user command providers + plugins.
+            from agent.transcription_registry import get_provider as _get_registry_provider
+            builtin = override in (
+                "local", "local_command", "groq", "openai", "mistral",
+                "xai", "elevenlabs", "deepinfra",
+            )
+            command_cfg = _resolve_command_stt_provider_config(override, stt_config)
+            plugin_cfg = _get_registry_provider(override) if not builtin and not command_cfg else None
+            if builtin or command_cfg is not None or plugin_cfg is not None:
+                provider = override
+
     if not _is_local_stt_provider(provider, stt_config):
         error = _validate_audio_file_size(Path(file_path))
         if error:
@@ -2521,8 +2544,18 @@ def _transcribe_prepared_audio(file_path: str, model: Optional[str] = None) -> D
     }
 
 
-def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, Any]:
-    """Safely validate, preprocess supported inputs, and dispatch transcription."""
+def transcribe_audio(
+    file_path: str,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Safely validate, preprocess supported inputs, and dispatch transcription.
+
+    Args:
+        file_path: Absolute path to the audio file.
+        model: Override the model name (None = provider default).
+        provider: Per-request STT provider override (None/'' = config).
+    """
     # Refuse to feed a credential / secret store (auth.json, .env, OAuth
     # tokens, mcp-tokens/, ...) to an STT provider — before ANY validation or
     # preprocessing, so the refusal names the real reason rather than a
@@ -2554,7 +2587,7 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         prepared_error = _validate_audio_file(prepared_path, enforce_size_limit=False)
         if prepared_error:
             return prepared_error
-        return _transcribe_prepared_audio(prepared_path, model)
+        return _transcribe_prepared_audio(prepared_path, model, provider_override=provider)
     finally:
         if cleanup_dir:
             shutil.rmtree(cleanup_dir, ignore_errors=True)

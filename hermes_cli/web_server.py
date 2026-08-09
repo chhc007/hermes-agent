@@ -4574,7 +4574,10 @@ async def transcribe_audio_upload(
             # probe above). STT only needs config/.env resolution, which the
             # contextvar override provides inside this worker thread.
             with _config_profile_scope(profile):
-                return transcribe_recording(temp_path)
+                return transcribe_recording(
+                    temp_path,
+                    provider=payload.provider,
+                )
 
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(None, _transcribe_scoped)

@@ -21,6 +21,16 @@ import { fetchJSON } from "@/lib/api";
 
 export type VoiceSendMode = "auto" | "confirm";
 
+/** STT provider options exposed in the voice settings switcher. */
+export const STT_PROVIDERS = [
+  { id: "local", label: "本地 (faster-whisper)" },
+  { id: "mimo", label: "MiMo 云端" },
+  { id: "groq", label: "Groq (需 key)" },
+  { id: "openai", label: "OpenAI (需 key)" },
+] as const;
+
+export type SttProvider = (typeof STT_PROVIDERS)[number]["id"];
+
 export interface VoiceSettings {
   /** Master switch: whether the voice feature is available at all. */
   enabled: boolean;
@@ -28,6 +38,8 @@ export interface VoiceSettings {
   sendMode: VoiceSendMode;
   /** When true, assistant replies are spoken aloud via /api/audio/speak. */
   voiceReply: boolean;
+  /** Which STT provider to use for transcription (per-request override). */
+  sttProvider: SttProvider;
 }
 
 const SETTINGS_KEY = "hermes.voice.settings.v1";
@@ -36,6 +48,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   enabled: true,
   sendMode: "auto",
   voiceReply: false,
+  sttProvider: "local",
 };
 
 export function loadVoiceSettings(): VoiceSettings {
@@ -43,10 +56,14 @@ export function loadVoiceSettings(): VoiceSettings {
     const raw = window.localStorage.getItem(SETTINGS_KEY);
     if (!raw) return { ...DEFAULT_VOICE_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<VoiceSettings>;
+    const sttProvider = STT_PROVIDERS.some((p) => p.id === parsed.sttProvider)
+      ? (parsed.sttProvider as SttProvider)
+      : DEFAULT_VOICE_SETTINGS.sttProvider;
     return {
       enabled: parsed.enabled ?? DEFAULT_VOICE_SETTINGS.enabled,
       sendMode: parsed.sendMode === "confirm" ? "confirm" : "auto",
       voiceReply: parsed.voiceReply ?? DEFAULT_VOICE_SETTINGS.voiceReply,
+      sttProvider,
     };
   } catch {
     return { ...DEFAULT_VOICE_SETTINGS };
@@ -259,9 +276,10 @@ export async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-/** Send audio to the server's local STT (faster-whisper). */
+/** Send audio to the server's STT (faster-whisper local, or override). */
 export async function transcribeAudio(
   blob: Blob,
+  provider?: SttProvider,
 ): Promise<VoiceTranscriptResult> {
   const dataUrl = await blobToDataUrl(blob);
   const res = await fetchJSON<TranscribeResponse>("/api/audio/transcribe", {
@@ -270,6 +288,7 @@ export async function transcribeAudio(
     body: JSON.stringify({
       data_url: dataUrl,
       mime_type: blob.type,
+      provider: provider ?? "",
     }),
   });
   if (!res.ok) {

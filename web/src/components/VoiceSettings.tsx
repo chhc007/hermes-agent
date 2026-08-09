@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
+  STT_PROVIDERS,
   loadVoiceSettings,
   saveVoiceSettings,
   type VoiceSettings as VoiceSettingsT,
@@ -104,6 +105,24 @@ export function VoiceSettings({ settings, onChange, className }: VoiceSettingsPr
               className="size-3.5 accent-primary"
             />
           </label>
+
+          {/* STT provider switcher */}
+          <div className="flex items-center justify-between gap-2 py-1.5 text-sm text-foreground/90">
+            <span>{t.voice.sttProvider}</span>
+            <select
+              value={settings.sttProvider}
+              onChange={(e) =>
+                update({ sttProvider: e.target.value as VoiceSettingsT["sttProvider"] })
+              }
+              className="max-w-40 rounded border border-border/60 bg-background px-1.5 py-0.5 text-xs text-foreground outline-none"
+            >
+              {STT_PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="mt-2 border-t border-border/60 pt-2 text-xs leading-relaxed text-muted-foreground/80">
             {t.voice.settingsHint}

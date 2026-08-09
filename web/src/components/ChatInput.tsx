@@ -293,6 +293,7 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           {voiceSettings && onVoiceTranscript && (
             <VoiceButton
               enabled={voiceSettings.enabled}
+              sttProvider={voiceSettings.sttProvider}
               onTranscript={onVoiceTranscript}
               onError={onVoiceError}
             />

@@ -49,11 +49,17 @@ describe("voiceMode settings", () => {
   });
 
   it("round-trips settings through localStorage", () => {
-    saveVoiceSettings({ enabled: true, sendMode: "confirm", voiceReply: true });
+    saveVoiceSettings({
+      enabled: true,
+      sendMode: "confirm",
+      voiceReply: true,
+      sttProvider: "mimo",
+    });
     expect(loadVoiceSettings()).toEqual({
       enabled: true,
       sendMode: "confirm",
       voiceReply: true,
+      sttProvider: "mimo",
     });
   });
 
@@ -93,14 +99,18 @@ describe("voiceMode API helpers", () => {
       provider: "local",
     });
     const blob = new Blob(["x"], { type: "audio/webm" });
-    await expect(transcribeAudio(blob)).resolves.toEqual({
+    await expect(transcribeAudio(blob, "local")).resolves.toEqual({
       transcript: "你好",
       provider: "local",
     });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/audio/transcribe");
-    const body = JSON.parse(String(init?.body)) as { data_url: string };
+    const body = JSON.parse(String(init?.body)) as {
+      data_url: string;
+      provider: string;
+    };
     expect(body.data_url).toContain("data:audio/webm");
+    expect(body.provider).toBe("local");
   });
 
   it("transcribeAudio throws on ok=false", async () => {
