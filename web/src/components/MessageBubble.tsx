@@ -12,9 +12,11 @@
  * `message.thinking` / `message.tools`.
  */
 
-import { ChevronRight, Sparkles } from "lucide-react";
+import { ChevronRight, Mic, Sparkles } from "lucide-react";
 import { memo, useState } from "react";
 import { useI18n } from "@/i18n";
+
+import { stripVoiceDirective } from "@/lib/voiceMode";
 
 import type {
   ChatMessage,
@@ -47,11 +49,25 @@ export const MessageBubble = memo(function MessageBubble({
   }
 
   if (message.role === "user") {
+    // Voice-transcribed messages carry an inline marker (model sees it so it
+    // knows the text may contain recognition errors). Strip it for display
+    // and show a mic badge in the meta row instead.
+    const { clean, isVoice } = stripVoiceDirective(message.text);
     return (
       <div className="flex justify-end">
         <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-lg rounded-br-sm bg-primary/10 px-3 py-2 text-sm leading-relaxed text-foreground">
-          {message.text}
-          <div className="mt-1 text-right text-[0.625rem] leading-none text-text-tertiary/80">
+          {clean}
+          <div className="mt-1 flex items-center justify-end gap-1 text-[0.625rem] leading-none text-text-tertiary/80">
+            {isVoice && (
+              <span
+                className="flex items-center gap-0.5 text-primary/70"
+                title="语音输入"
+                data-slot="voice-input-badge"
+              >
+                <Mic className="size-3" />
+                语音
+              </span>
+            )}
             {formatTimestamp(message.ts)}
           </div>
         </div>

@@ -74,6 +74,30 @@ export function clampTtsSpeed(value: unknown): number {
   return Math.min(4.0, Math.max(0.25, n));
 }
 
+/**
+ * Marker appended to voice-transcribed messages. The model sees it inline
+ * (so it knows the text came from speech recognition and may contain
+ * recognition errors worth a light correction), while the user bubble strips
+ * it and shows a mic badge instead (see MessageBubble). Persisted with the
+ * message, so the badge survives page refreshes.
+ */
+export const VOICE_INPUT_DIRECTIVE =
+  "【语音输入】本条消息由语音输入转写，可能存在识别误差，如有不通顺请结合上下文简单纠正。";
+
+/** Split a message text into clean display text + a flag for voice input. */
+export function stripVoiceDirective(text: string | undefined): {
+  clean: string;
+  isVoice: boolean;
+} {
+  if (!text) return { clean: text ?? "", isVoice: false };
+  const isVoice = text.includes(VOICE_INPUT_DIRECTIVE);
+  const clean = text
+    .replace(VOICE_INPUT_DIRECTIVE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { clean, isVoice };
+}
+
 export function loadVoiceSettings(): VoiceSettings {
   try {
     const raw = window.localStorage.getItem(SETTINGS_KEY);

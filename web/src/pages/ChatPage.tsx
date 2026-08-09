@@ -43,6 +43,7 @@ import { ChatSessionList } from "@/components/ChatSessionList";
 import { ChatInput, type ChatInputHandle } from "@/components/ChatInput";
 import { VoiceReply } from "@/components/VoiceReply";
 import {
+  VOICE_INPUT_DIRECTIVE,
   loadVoiceSettings,
   saveVoiceSettings,
   type VoiceSettings as VoiceSettingsT,
@@ -843,7 +844,11 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // commands we still forward them (so the command executes), but surface a
   // local hint bubble pointing the user at the Terminal view.
   const sendChatPrompt = useCallback(
-    async (text: string, attachments: File[] = []) => {
+    async (
+      text: string,
+      attachments: File[] = [],
+      opts?: { fromVoice?: boolean },
+    ) => {
       const ws = wsRef.current;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         return false;
@@ -870,10 +875,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       // instead of reading a long markdown wall aloud. Explicitly preserves
       // tool calls / investigation depth: only the FINAL visible reply is
       // compressed, not the work itself.
+      // Voice input: append a marker so the model knows the text came from
+      // speech recognition and may contain recognition errors. The user's
+      // bubble strips it (MessageBubble shows a mic badge instead).
+      const voiceMarker = opts?.fromVoice ? `\n\n${VOICE_INPUT_DIRECTIVE}` : "";
       const sentText =
         voiceSettings.voiceReply && !voiceMuted
-          ? `${fullText}\n\n[系统提示] 当前处于语音播报模式。请照常执行任务：该查的资料照查、该调的工具照调、该有的步骤照做，过程与思考不受影响。仅最终回复需要：用简洁口语化的语言，控制在 3 句话以内，先给结论。详细内容请用"详情见回复"等简短提示代替，因为整段回复会被语音朗读。`
-          : fullText;
+          ? `${fullText}${voiceMarker}\n\n[系统提示] 当前处于语音播报模式。请照常执行任务：该查的资料照查、该调的工具照调、该有的步骤照做，过程与思考不受影响。仅最终回复需要：用简洁口语化的语言，控制在 3 句话以内，先给结论。详细内容请用"详情见回复"等简短提示代替，因为整段回复会被语音朗读。`
+          : `${fullText}${voiceMarker}`;
       // Re-check the socket after the (async) upload — it may have dropped
       // or reconnected while we were waiting.
       const live = wsRef.current;
@@ -902,11 +911,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       }
       // Locally-optimistic user bubble: the /api/events feed carries no
       // user-input frames, so the composer appends its own message. Show a
-      // paperclip summary for attachments instead of raw @file: paths.
+      // paperclip summary for attachments instead of raw @file: paths. Voice
+      // transcripts keep the marker so MessageBubble strips it into a mic
+      // badge consistently with reloaded history.
       const display =
         attachments.length > 0
           ? `${attachments.map((f) => `📎 ${f.name}`).join("  ")}${text ? `\n${text}` : ""}`
-          : text;
+          : `${text ?? ""}${opts?.fromVoice ? `\n\n${VOICE_INPUT_DIRECTIVE}` : ""}`;
       sendUserMessageRef.current(display);
       return true;
     },
@@ -924,7 +935,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       const trimmed = (text ?? "").trim();
       if (!trimmed) return;
       if (voiceSettings.sendMode === "auto") {
-        void sendChatPromptRef.current(trimmed);
+        void sendChatPromptRef.current(trimmed, [], { fromVoice: true });
       } else {
         chatInputRef.current?.setValue(trimmed);
         chatInputRef.current?.focus();

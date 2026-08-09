@@ -3,6 +3,8 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { VOICE_INPUT_DIRECTIVE } from "@/lib/voiceMode";
+
 vi.mock("@/lib/utils", () => ({
   cn: (...args: Array<string | false | null | undefined>) => args.filter(Boolean).join(" "),
   formatTimestamp: (ts: number) => (ts > 0 ? `TS-${ts}` : ""),
@@ -72,6 +74,31 @@ describe("MessageBubble", () => {
       <MessageBubble message={{ ...base, id: "u1", role: "user", text: "my question" }} />,
     );
     expect(visibleText()).toContain("my question");
+  });
+
+  it("shows a mic badge for voice-transcribed user messages and hides the marker", async () => {
+    await render(
+      <MessageBubble
+        message={{
+          ...base,
+          id: "u2",
+          role: "user",
+          text: `今天天气怎么样？\n\n${VOICE_INPUT_DIRECTIVE}`,
+        }}
+      />,
+    );
+    // Marker is stripped from the visible text.
+    expect(visibleText()).toContain("今天天气怎么样？");
+    expect(visibleText()).not.toContain("【语音输入】");
+    // Mic badge rendered.
+    expect(container.querySelector('[data-slot="voice-input-badge"]')).toBeTruthy();
+  });
+
+  it("renders plain user messages without a mic badge", async () => {
+    await render(
+      <MessageBubble message={{ ...base, id: "u3", role: "user", text: "typed text" }} />,
+    );
+    expect(container.querySelector('[data-slot="voice-input-badge"]')).toBeNull();
   });
 
   it("renders system messages centered as text", async () => {

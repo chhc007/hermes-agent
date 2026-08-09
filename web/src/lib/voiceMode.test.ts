@@ -9,12 +9,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   DEFAULT_VOICE_SETTINGS,
+  VOICE_INPUT_DIRECTIVE,
   blobToDataUrl,
   clampTtsSpeed,
   cleanTextForSpeech,
   loadVoiceSettings,
   saveVoiceSettings,
   speakText,
+  stripVoiceDirective,
   transcribeAudio,
 } from "@/lib/voiceMode";
 
@@ -75,6 +77,25 @@ describe("voiceMode settings", () => {
     expect(clampTtsSpeed("1.5")).toBe(1.5);
     expect(clampTtsSpeed(undefined)).toBe(1.0);
     expect(clampTtsSpeed("abc")).toBe(1.0);
+  });
+
+  it("stripVoiceDirective flags voice input and removes the marker", () => {
+    const text = `帮我查下天气\n\n${VOICE_INPUT_DIRECTIVE}`;
+    const { clean, isVoice } = stripVoiceDirective(text);
+    expect(isVoice).toBe(true);
+    expect(clean).toBe("帮我查下天气");
+    expect(clean.includes("【语音输入】")).toBe(false);
+  });
+
+  it("stripVoiceDirective leaves plain messages untouched", () => {
+    const { clean, isVoice } = stripVoiceDirective("普通文字消息");
+    expect(isVoice).toBe(false);
+    expect(clean).toBe("普通文字消息");
+  });
+
+  it("stripVoiceDirective handles empty/undefined input", () => {
+    expect(stripVoiceDirective("")).toEqual({ clean: "", isVoice: false });
+    expect(stripVoiceDirective(undefined)).toEqual({ clean: "", isVoice: false });
   });
 
   it("falls back to defaults on corrupt JSON", () => {
