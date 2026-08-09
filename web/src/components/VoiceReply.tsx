@@ -17,7 +17,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { cleanTextForSpeech, speakText } from "@/lib/voiceMode";
+import {
+  cleanTextForSpeech,
+  speakText,
+  type TtsProvider,
+} from "@/lib/voiceMode";
 
 interface VoiceReplyProps {
   /** Master switch (voiceSettings.voiceReply). */
@@ -26,6 +30,8 @@ interface VoiceReplyProps {
   muted: boolean;
   /** Toggle mute on/off (called by the floating button). */
   onToggleMuted: () => void;
+  /** TTS provider override (voice settings). */
+  ttsProvider?: TtsProvider;
   /** Text to speak; passing a new non-empty value triggers synthesis+play. */
   text: string;
   /** Monotonic counter so identical texts can be re-spoken. */
@@ -37,6 +43,7 @@ export function VoiceReply({
   enabled,
   muted,
   onToggleMuted,
+  ttsProvider,
   text,
   runId,
   onError,
@@ -76,7 +83,7 @@ export function VoiceReply({
           setBusy(false);
           return;
         }
-        const dataUrl = await speakText(speechText);
+        const dataUrl = await speakText(speechText, ttsProvider);
         if (currentRun.current !== runId) return; // superseded
         audioRef.current?.pause();
         const audio = new Audio(dataUrl);

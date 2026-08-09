@@ -249,6 +249,7 @@ export interface Translations {
     autoSend: string;
     voiceReply: string;
     sttProvider: string;
+    ttsProvider: string;
     settingsHint: string;
     replyActive: string;
     stopReply: string;

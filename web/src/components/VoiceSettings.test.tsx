@@ -17,6 +17,7 @@ vi.mock("@/i18n", () => ({
         autoSend: "Auto-send",
         voiceReply: "Voice reply",
         sttProvider: "Recognition engine",
+        ttsProvider: "Voice engine",
         settingsHint: "hint",
       },
     },
@@ -49,7 +50,7 @@ describe("VoiceSettings", () => {
   it("toggles the panel open/closed", async () => {
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local" }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo" }}
         onChange={vi.fn()}
       />,
     );
@@ -63,7 +64,7 @@ describe("VoiceSettings", () => {
   it("reflects settings state in the checkboxes", async () => {
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: true, sttProvider: "local" }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: true, sttProvider: "local", ttsProvider: "mimo" }}
         onChange={vi.fn()}
       />,
     );
@@ -81,7 +82,7 @@ describe("VoiceSettings", () => {
     const onChange = vi.fn();
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local" }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo" }}
         onChange={onChange}
       />,
     );
@@ -96,6 +97,7 @@ describe("VoiceSettings", () => {
       sendMode: "auto",
       voiceReply: false,
       sttProvider: "local",
+      ttsProvider: "mimo",
     });
   });
 
@@ -103,7 +105,7 @@ describe("VoiceSettings", () => {
     const onChange = vi.fn();
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local" }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo" }}
         onChange={onChange}
       />,
     );
@@ -121,6 +123,7 @@ describe("VoiceSettings", () => {
       sendMode: "auto",
       voiceReply: false,
       sttProvider: "mimo",
+      ttsProvider: "mimo",
     });
   });
 });

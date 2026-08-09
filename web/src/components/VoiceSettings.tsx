@@ -14,6 +14,7 @@ import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
   STT_PROVIDERS,
+  TTS_PROVIDERS,
   loadVoiceSettings,
   saveVoiceSettings,
   type VoiceSettings as VoiceSettingsT,
@@ -117,6 +118,24 @@ export function VoiceSettings({ settings, onChange, className }: VoiceSettingsPr
               className="max-w-40 rounded border border-border/60 bg-background px-1.5 py-0.5 text-xs text-foreground outline-none"
             >
               {STT_PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* TTS provider switcher */}
+          <div className="flex items-center justify-between gap-2 py-1.5 text-sm text-foreground/90">
+            <span>{t.voice.ttsProvider}</span>
+            <select
+              value={settings.ttsProvider}
+              onChange={(e) =>
+                update({ ttsProvider: e.target.value as VoiceSettingsT["ttsProvider"] })
+              }
+              className="max-w-40 rounded border border-border/60 bg-background px-1.5 py-0.5 text-xs text-foreground outline-none"
+            >
+              {TTS_PROVIDERS.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
                 </option>

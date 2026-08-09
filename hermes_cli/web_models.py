@@ -295,6 +295,9 @@ class DebugShareRequest(BaseModel):
 
 class TTSSpeakRequest(BaseModel):
     text: str
+    # Optional per-request TTS provider override (e.g. "mimo", "edge",
+    # "openai", "elevenlabs"). Empty/None = use tts.provider from config.yaml.
+    provider: Optional[str] = None
 
 
 # --- from web_server.py (originally lines 11549-11551) ---

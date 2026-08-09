@@ -234,6 +234,7 @@ export const en: Translations = {
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
     sttProvider: "Recognition engine",
+    ttsProvider: "Voice engine",
     settingsHint: "Recording happens in your browser; recognition uses the server's local model (faster-whisper).",
     replyActive: "Reading reply aloud — click to stop",
     stopReply: "Stop reading",

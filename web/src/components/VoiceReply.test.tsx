@@ -15,7 +15,6 @@ vi.mock("@/lib/voiceMode", () => ({
   speakText: speakMock,
   cleanTextForSpeech: (text: string) => text.trim(),
 }));
-
 vi.mock("@/i18n", () => ({
   useI18n: () => ({
     t: {
@@ -95,7 +94,7 @@ describe("VoiceReply", () => {
     const audioProto = playStub();
     await render(<VoiceReply {...baseProps} text="你好" runId={1} />);
     await vi.waitFor(() => {
-      expect(speakMock).toHaveBeenCalledWith("你好");
+      expect(speakMock).toHaveBeenCalledWith("你好", undefined);
       expect(audioProto.play).toHaveBeenCalled();
     });
   });

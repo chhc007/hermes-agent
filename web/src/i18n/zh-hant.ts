@@ -215,6 +215,7 @@ export const zhHant: Translations = {
     autoSend: "說完自動傳送",
     voiceReply: "語音回覆（朗讀回覆）",
     sttProvider: "語音辨識引擎",
+    ttsProvider: "語音合成引擎",
     settingsHint: "錄音在瀏覽器進行，辨識使用伺服器本地模型（faster-whisper）。",
     replyActive: "正在朗讀回覆，點擊停止",
     stopReply: "停止朗讀",

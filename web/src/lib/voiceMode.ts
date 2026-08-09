@@ -31,6 +31,16 @@ export const STT_PROVIDERS = [
 
 export type SttProvider = (typeof STT_PROVIDERS)[number]["id"];
 
+/** TTS provider options for the voice-reply switcher. */
+export const TTS_PROVIDERS = [
+  { id: "mimo", label: "MiMo (冰糖)" },
+  { id: "edge", label: "Edge (免费)" },
+  { id: "openai", label: "OpenAI (需 key)" },
+  { id: "elevenlabs", label: "ElevenLabs (需 key)" },
+] as const;
+
+export type TtsProvider = (typeof TTS_PROVIDERS)[number]["id"];
+
 export interface VoiceSettings {
   /** Master switch: whether the voice feature is available at all. */
   enabled: boolean;
@@ -40,6 +50,8 @@ export interface VoiceSettings {
   voiceReply: boolean;
   /** Which STT provider to use for transcription (per-request override). */
   sttProvider: SttProvider;
+  /** Which TTS provider to use for spoken replies (per-request override). */
+  ttsProvider: TtsProvider;
 }
 
 const SETTINGS_KEY = "hermes.voice.settings.v1";
@@ -49,6 +61,7 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   sendMode: "auto",
   voiceReply: false,
   sttProvider: "local",
+  ttsProvider: "mimo",
 };
 
 export function loadVoiceSettings(): VoiceSettings {
@@ -59,11 +72,15 @@ export function loadVoiceSettings(): VoiceSettings {
     const sttProvider = STT_PROVIDERS.some((p) => p.id === parsed.sttProvider)
       ? (parsed.sttProvider as SttProvider)
       : DEFAULT_VOICE_SETTINGS.sttProvider;
+    const ttsProvider = TTS_PROVIDERS.some((p) => p.id === parsed.ttsProvider)
+      ? (parsed.ttsProvider as TtsProvider)
+      : DEFAULT_VOICE_SETTINGS.ttsProvider;
     return {
       enabled: parsed.enabled ?? DEFAULT_VOICE_SETTINGS.enabled,
       sendMode: parsed.sendMode === "confirm" ? "confirm" : "auto",
       voiceReply: parsed.voiceReply ?? DEFAULT_VOICE_SETTINGS.voiceReply,
       sttProvider,
+      ttsProvider,
     };
   } catch {
     return { ...DEFAULT_VOICE_SETTINGS };
@@ -323,11 +340,17 @@ interface SpeakResponse {
 }
 
 /** Synthesize assistant text to speech (server-side TTS provider). */
-export async function speakText(text: string): Promise<string> {
+export async function speakText(
+  text: string,
+  provider?: TtsProvider,
+): Promise<string> {
   const res = await fetchJSON<SpeakResponse>("/api/audio/speak", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({
+      text,
+      provider: provider ?? "",
+    }),
   });
   if (!res.ok || !res.data_url) {
     throw new Error("语音合成失败");

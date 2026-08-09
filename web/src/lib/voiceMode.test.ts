@@ -55,12 +55,14 @@ describe("voiceMode settings", () => {
       sendMode: "confirm",
       voiceReply: true,
       sttProvider: "mimo",
+      ttsProvider: "edge",
     });
     expect(loadVoiceSettings()).toEqual({
       enabled: true,
       sendMode: "confirm",
       voiceReply: true,
       sttProvider: "mimo",
+      ttsProvider: "edge",
     });
   });
 
@@ -127,11 +129,17 @@ describe("voiceMode API helpers", () => {
       mime_type: "audio/wav",
       provider: "mimo",
     });
-    await expect(speakText("你好")).resolves.toBe("data:audio/wav;base64,AAAA");
+    await expect(speakText("你好", "mimo")).resolves.toBe(
+      "data:audio/wav;base64,AAAA",
+    );
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/audio/speak");
-    const body = JSON.parse(String(init?.body)) as { text: string };
+    const body = JSON.parse(String(init?.body)) as {
+      text: string;
+      provider: string;
+    };
     expect(body.text).toBe("你好");
+    expect(body.provider).toBe("mimo");
   });
 
   it("speakText throws on failure", async () => {
