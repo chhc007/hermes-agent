@@ -229,6 +229,7 @@ export const zh: Translations = {
     voiceReply: "语音回复（朗读回复）",
     sttProvider: "语音识别引擎",
     ttsProvider: "语音合成引擎",
+    ttsSpeed: "语速",
     settingsHint: "录音在浏览器进行，识别使用服务器本地模型（faster-whisper）。",
     replyActive: "正在朗读回复，点击停止",
     stopReply: "停止朗读",

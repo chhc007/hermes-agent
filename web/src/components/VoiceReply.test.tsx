@@ -94,8 +94,18 @@ describe("VoiceReply", () => {
     const audioProto = playStub();
     await render(<VoiceReply {...baseProps} text="你好" runId={1} />);
     await vi.waitFor(() => {
-      expect(speakMock).toHaveBeenCalledWith("你好", undefined);
+      expect(speakMock).toHaveBeenCalledWith("你好", undefined, undefined);
       expect(audioProto.play).toHaveBeenCalled();
+    });
+  });
+
+  it("passes the configured TTS speed to the synth call", async () => {
+    playStub();
+    await render(
+      <VoiceReply {...baseProps} ttsProvider="edge" ttsSpeed={1.5} text="你好" runId={1} />,
+    );
+    await vi.waitFor(() => {
+      expect(speakMock).toHaveBeenCalledWith("你好", "edge", 1.5);
     });
   });
 

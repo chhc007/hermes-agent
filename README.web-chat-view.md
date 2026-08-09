@@ -59,6 +59,11 @@
 | 🧹 **幽灵连接清理** | events 轮询推送失败自动 `close(1011)` 断开半死 socket，强制浏览器重连换新；subscribe/unsubscribe 全日志（v1.7.10） |
 | ⏹️ **Stop 按钮实时点亮** | `turn.snapshot` 的 streaming 标志驱动 `meta.running`（无需等 session.info），任务开始即出现停止按钮，结束自动复位（v1.7.11） |
 | 🇨🇳 **完整汉化** | zh 翻译补全（63 key，不再 fallback 英文）+ 默认语言中文（浏览器 `zh*` 自动识别，localStorage 手动选择优先）+ Chat 核心组件全 i18n（输入框/气泡/澄清/媒体） |
+| 🎤 **语音输入** | 浏览器麦克风 → 本地 faster-whisper 转写：ChatGPT 点击式 → 微信式按住说话/上滑取消（v1.7.12/v1.7.16），识别引擎可切换 local/mimo/groq/openai（v1.7.13） |
+| 🔊 **语音回复** | 助手回复经服务器 TTS 朗读：文本清洗、精炼指令、静音开关（可恢复）、历史不重播、单实例（v1.7.14-22），合成引擎可切换 mimo/edge/openai/elevenlabs（v1.7.19） |
+| ⚙️ **语音设置弹窗** | 主开关/自动发送/语音回复/识别引擎/合成引擎/语速，localStorage 持久化；手机窄屏自适应对齐（v1.7.13-23） |
+| 🚀 **TTS 语速调节** | 语音设置里可选 0.5x~2.0x 语速，`/api/audio/speak` 透传 `speed`，Edge/OpenAI 等后端原生支持（v1.7.23） |
+| 📱 **设置弹窗手机适配** | 弹窗按触发按钮动态选择左/右展开方向并限制最大宽度，窄屏不再向左溢出视口被裁剪（v1.7.23） |
 
 ---
 
@@ -235,8 +240,31 @@ web/src/lib/chatFileUpload.ts          # 多文件上传 /api/chat/files-upload 
 web/src/components/SlashPopover.tsx    # slash 补全（Tab/Enter 选中，终端命令徽标）
 web/src/lib/terminal-commands.ts       # 终端专属命令清单（徽标 + 提示的单一事实源）
 web/src/pages/ChatPage.tsx             # Chat/Terminal 视图切换 + PTY 连接
-hermes_cli/web_server.py               # 后端（/api/media + /api/chat/image-upload + /api/chat/files-upload）
+web/src/lib/voiceMode.ts               # 语音：VoiceRecorder(MediaRecorder+VAD) + 设置(localStorage) + transcribeAudio/speakText
+web/src/components/VoiceButton.tsx     # 语音入口：VoiceModeButton(模式切换) + VoiceHoldButton(微信式按住说话)
+web/src/components/VoiceSettings.tsx   # 语音设置弹窗（主开关/自动发送/语音回复/STT/TTS 引擎/语速 + 视口自适应定位）
+web/src/components/VoiceReply.tsx      # 语音回复（朗读助手回复 + 静音开关，单一实例渲染在 ChatInput 上方）
+hermes_cli/web_server.py               # 后端（/api/media + /api/chat/image-upload + /api/chat/files-upload + /api/audio/transcribe + /api/audio/speak）
+hermes_cli/web_models.py               # 请求模型（TTSSpeakRequest 含 provider/speed 透传字段）
+tools/voice_mode.py                    # transcribe_recording（本地 faster-whisper + 请求级 provider 覆盖）
+tools/tts_tool.py                      # text_to_speech_tool（provider/speed 原生支持，speed 注入 tts_config）
 ```
+
+### 语音输入与语音回复（v1.7.12-23）
+
+浏览器端完整语音链路，两个方向都**后端零新增端点**（web_server.py 早有 `/api/audio/transcribe` 与 `/api/audio/speak`，前端直接复用，仅加了请求级 provider/speed 字段透传）：
+
+**语音输入（STT）**：浏览器麦克风录音（MediaRecorder，VAD 静音自动停止或微信式按住说话）→ base64 → `POST /api/audio/transcribe`（`data_url` + `provider`）→ 服务器 faster-whisper（本地）/mimo/groq/openai → 返回文字进输入框或自动发送。识别引擎在设置里切换，走请求级 `provider` 覆盖（不改全局 config，对 gateway 零影响）。
+
+**语音回复（TTS）**：ChatPage 跟踪本会话内 streaming→complete 的实时消息（历史加载不触发朗读）→ `VoiceReply` 清洗文本（去代码/表格/URL/emoji，>800 字句号截断）→ `speakText(text, provider, speed)` → `POST /api/audio/speak` → base64 audio → `<audio>` 播放。右下角是**静音开关**（可静音可恢复，不是一次性暂停）。
+
+**精炼回复指令**：`voiceReply && !muted` 时，`sendChatPrompt` 在发送文本后追加 `[系统提示] 当前处于语音播报模式…`（模型可见、用户气泡不可见，display 用原始 text）。注意：**只要语音回复开着且未静音，任何消息（文字/语音输入）都会注入**，与是否用语音说话无关。
+
+**TTS 语速链路（v1.7.23）**：设置弹窗语速下拉（0.5/0.75/1.0/1.25/1.5/2.0x）→ `voiceSettings.ttsSpeed`（localStorage 持久化，clamp 0.25-4.0）→ `VoiceReply` `ttsSpeed` prop → `speakText(text, provider, speed)` → `POST /api/audio/speak {speed}` → `TTSSpeakRequest.speed` → `text_to_speech_tool(text, provider=…, speed=…)` → 注入 `tts_config["speed"]` → Edge（rate ±%）/OpenAI（speed）/xAI/MiMo 等后端原生变速。command 型 provider 只有命令模板带 `{speed}` 占位符才生效。
+
+**设置弹窗手机适配（v1.7.23）**：面板 `absolute bottom-10 right-0 w-64` 相对触发按钮（包含块只有按钮宽），`right-0` 向左展开 256px，手机窄屏下按钮又在工具栏左侧 → 面板左缘溢出视口被裁剪（"没显示完整，都到左边去了"）。修复：打开时 `getBoundingClientRect()` 测量，向左会溢出则改 `left-0` 向右展开，右缘仍超视口则 `maxWidth` 夹紧；面板加 `max-h-[55vh] overflow-y-auto` 防超高。
+
+**坑点全集**：见私有技能 `voice-provider-integration` Pitfall 1-18（HF 离线变量、TTS/STT provider 覆盖、朗读触发、微信式交互、单实例、语速、弹窗定位等）。
 
 ### 多文件上传（v1.7.5 新增）
 

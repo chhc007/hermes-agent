@@ -250,6 +250,7 @@ export interface Translations {
     voiceReply: string;
     sttProvider: string;
     ttsProvider: string;
+    ttsSpeed: string;
     settingsHint: string;
     replyActive: string;
     stopReply: string;

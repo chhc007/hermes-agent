@@ -50,7 +50,7 @@ describe("VoiceSettings", () => {
   it("toggles the panel open/closed", async () => {
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo" }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo", ttsSpeed: 1 }}
         onChange={vi.fn()}
       />,
     );
@@ -64,7 +64,7 @@ describe("VoiceSettings", () => {
   it("reflects settings state in the checkboxes", async () => {
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: true, sttProvider: "local", ttsProvider: "mimo" }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: true, sttProvider: "local", ttsProvider: "mimo", ttsSpeed: 1 }}
         onChange={vi.fn()}
       />,
     );
@@ -82,7 +82,7 @@ describe("VoiceSettings", () => {
     const onChange = vi.fn();
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo" }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo", ttsSpeed: 1 }}
         onChange={onChange}
       />,
     );
@@ -98,6 +98,7 @@ describe("VoiceSettings", () => {
       voiceReply: false,
       sttProvider: "local",
       ttsProvider: "mimo",
+      ttsSpeed: 1,
     });
   });
 
@@ -105,7 +106,7 @@ describe("VoiceSettings", () => {
     const onChange = vi.fn();
     await render(
       <VoiceSettings
-        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo" }}
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo", ttsSpeed: 1 }}
         onChange={onChange}
       />,
     );
@@ -124,6 +125,7 @@ describe("VoiceSettings", () => {
       voiceReply: false,
       sttProvider: "mimo",
       ttsProvider: "mimo",
+      ttsSpeed: 1,
     });
   });
 });

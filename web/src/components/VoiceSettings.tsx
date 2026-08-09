@@ -26,10 +26,19 @@ interface VoiceSettingsProps {
   className?: string;
 }
 
+/** Speech-speed options shown in the settings panel (multipliers). */
+export const TTS_SPEED_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] as const;
+
 export function VoiceSettings({ settings, onChange, className }: VoiceSettingsProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  // Which side of the trigger the panel expands toward, plus a width cap so
+  // the panel never runs off the viewport on narrow phones.
+  const [panelPlacement, setPanelPlacement] = useState<{
+    align: "left" | "right";
+    maxWidth?: number;
+  }>({ align: "right" });
 
   useEffect(() => {
     if (!open) return;
@@ -40,6 +49,29 @@ export function VoiceSettings({ settings, onChange, className }: VoiceSettingsPr
     };
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  // The panel is absolutely positioned relative to the (narrow) trigger
+  // button. Right-aligned it expands leftward 256px, which on phones can push
+  // the panel off the left edge of the viewport. Measure the trigger and pick
+  // an alignment + width cap that keep the whole panel on screen.
+  useEffect(() => {
+    if (!open || !panelRef.current) return;
+    const rect = panelRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const PANEL_W = 256;
+    let align: "left" | "right" = "right";
+    let maxWidth: number | undefined;
+    if (rect.right - PANEL_W < 8) {
+      // Leftward expansion would overflow the viewport's left edge — flip to
+      // rightward expansion (aligned to the trigger's left edge).
+      align = "left";
+      const rightEdge = rect.left + PANEL_W;
+      if (rightEdge > vw - 8) {
+        maxWidth = Math.max(200, vw - 8 - rect.left - 8);
+      }
+    }
+    setPanelPlacement({ align, maxWidth });
   }, [open]);
 
   const update = (patch: Partial<VoiceSettingsT>) => {
@@ -65,7 +97,12 @@ export function VoiceSettings({ settings, onChange, className }: VoiceSettingsPr
 
       {open && (
         <div
-          className="absolute bottom-10 right-0 z-50 w-64 rounded-lg border border-border/70 bg-background/95 p-3 shadow-lg backdrop-blur"
+          className={cn(
+            "absolute bottom-10 z-50 w-64 rounded-lg border border-border/70 bg-background/95 p-3 shadow-lg backdrop-blur",
+            "max-h-[55vh] overflow-y-auto",
+            panelPlacement.align === "left" ? "left-0" : "right-0",
+          )}
+          style={panelPlacement.maxWidth != null ? { maxWidth: panelPlacement.maxWidth } : undefined}
           data-slot="voice-settings-panel"
         >
           <div className="mb-2 text-xs font-medium text-foreground">
@@ -138,6 +175,22 @@ export function VoiceSettings({ settings, onChange, className }: VoiceSettingsPr
               {TTS_PROVIDERS.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Speech speed */}
+          <div className="flex items-center justify-between gap-2 py-1.5 text-sm text-foreground/90">
+            <span>{t.voice.ttsSpeed}</span>
+            <select
+              value={String(settings.ttsSpeed)}
+              onChange={(e) => update({ ttsSpeed: Number(e.target.value) })}
+              className="max-w-24 rounded border border-border/60 bg-background px-1.5 py-0.5 text-xs text-foreground outline-none"
+            >
+              {TTS_SPEED_OPTIONS.map((s) => (
+                <option key={s} value={String(s)}>
+                  {s}x
                 </option>
               ))}
             </select>

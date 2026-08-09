@@ -4746,7 +4746,9 @@ async def speak_text(payload: TTSSpeakRequest, profile: Optional[str] = None):
             # resolution, so the task-local override inside this worker
             # thread is sufficient (same reasoning as the MCP probe scope).
             with _config_profile_scope(profile):
-                return text_to_speech_tool(text, provider=payload.provider)
+                return text_to_speech_tool(
+                    text, provider=payload.provider, speed=payload.speed
+                )
 
         loop = asyncio.get_running_loop()
         result_json = await loop.run_in_executor(None, _speak_scoped)

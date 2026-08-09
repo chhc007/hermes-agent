@@ -32,6 +32,8 @@ interface VoiceReplyProps {
   onToggleMuted: () => void;
   /** TTS provider override (voice settings). */
   ttsProvider?: TtsProvider;
+  /** Playback speed multiplier (voice settings, 1.0 = normal). */
+  ttsSpeed?: number;
   /** Text to speak; passing a new non-empty value triggers synthesis+play. */
   text: string;
   /** Monotonic counter so identical texts can be re-spoken. */
@@ -44,6 +46,7 @@ export function VoiceReply({
   muted,
   onToggleMuted,
   ttsProvider,
+  ttsSpeed,
   text,
   runId,
   onError,
@@ -83,7 +86,7 @@ export function VoiceReply({
           setBusy(false);
           return;
         }
-        const dataUrl = await speakText(speechText, ttsProvider);
+        const dataUrl = await speakText(speechText, ttsProvider, ttsSpeed);
         if (currentRun.current !== runId) return; // superseded
         audioRef.current?.pause();
         const audio = new Audio(dataUrl);

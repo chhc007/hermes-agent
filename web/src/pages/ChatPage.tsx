@@ -2160,6 +2160,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                       muted={voiceMuted}
                       onToggleMuted={() => setVoiceMuted((m) => !m)}
                       ttsProvider={voiceSettings.ttsProvider}
+                      ttsSpeed={voiceSettings.ttsSpeed}
                       text={voiceReplyText}
                       runId={voiceReplyRun}
                       onError={(msg) => setBanner(msg)}

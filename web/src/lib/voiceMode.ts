@@ -52,6 +52,8 @@ export interface VoiceSettings {
   sttProvider: SttProvider;
   /** Which TTS provider to use for spoken replies (per-request override). */
   ttsProvider: TtsProvider;
+  /** Playback speed multiplier for spoken replies (0.25-4.0, 1.0 = normal). */
+  ttsSpeed: number;
 }
 
 const SETTINGS_KEY = "hermes.voice.settings.v1";
@@ -62,7 +64,15 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   voiceReply: false,
   sttProvider: "local",
   ttsProvider: "mimo",
+  ttsSpeed: 1.0,
 };
+
+/** Clamp a TTS speed value to the backend-supported range (0.25-4.0). */
+export function clampTtsSpeed(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_VOICE_SETTINGS.ttsSpeed;
+  return Math.min(4.0, Math.max(0.25, n));
+}
 
 export function loadVoiceSettings(): VoiceSettings {
   try {
@@ -81,6 +91,7 @@ export function loadVoiceSettings(): VoiceSettings {
       voiceReply: parsed.voiceReply ?? DEFAULT_VOICE_SETTINGS.voiceReply,
       sttProvider,
       ttsProvider,
+      ttsSpeed: clampTtsSpeed(parsed.ttsSpeed),
     };
   } catch {
     return { ...DEFAULT_VOICE_SETTINGS };
@@ -343,6 +354,7 @@ interface SpeakResponse {
 export async function speakText(
   text: string,
   provider?: TtsProvider,
+  speed?: number,
 ): Promise<string> {
   const res = await fetchJSON<SpeakResponse>("/api/audio/speak", {
     method: "POST",
@@ -350,6 +362,7 @@ export async function speakText(
     body: JSON.stringify({
       text,
       provider: provider ?? "",
+      speed: speed != null ? clampTtsSpeed(speed) : undefined,
     }),
   });
   if (!res.ok || !res.data_url) {

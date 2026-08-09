@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_VOICE_SETTINGS,
   blobToDataUrl,
+  clampTtsSpeed,
   cleanTextForSpeech,
   loadVoiceSettings,
   saveVoiceSettings,
@@ -56,6 +57,7 @@ describe("voiceMode settings", () => {
       voiceReply: true,
       sttProvider: "mimo",
       ttsProvider: "edge",
+      ttsSpeed: 1,
     });
     expect(loadVoiceSettings()).toEqual({
       enabled: true,
@@ -63,7 +65,16 @@ describe("voiceMode settings", () => {
       voiceReply: true,
       sttProvider: "mimo",
       ttsProvider: "edge",
+      ttsSpeed: 1,
     });
+  });
+
+  it("clamps ttsSpeed to the supported range", () => {
+    expect(clampTtsSpeed(0.1)).toBe(0.25);
+    expect(clampTtsSpeed(9)).toBe(4.0);
+    expect(clampTtsSpeed("1.5")).toBe(1.5);
+    expect(clampTtsSpeed(undefined)).toBe(1.0);
+    expect(clampTtsSpeed("abc")).toBe(1.0);
   });
 
   it("falls back to defaults on corrupt JSON", () => {

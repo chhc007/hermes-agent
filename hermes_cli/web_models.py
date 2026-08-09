@@ -298,6 +298,8 @@ class TTSSpeakRequest(BaseModel):
     # Optional per-request TTS provider override (e.g. "mimo", "edge",
     # "openai", "elevenlabs"). Empty/None = use tts.provider from config.yaml.
     provider: Optional[str] = None
+    # Optional playback speed multiplier (0.25-4.0). None = config default.
+    speed: Optional[float] = None
 
 
 # --- from web_server.py (originally lines 11549-11551) ---

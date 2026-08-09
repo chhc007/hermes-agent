@@ -216,6 +216,7 @@ export const ru: Translations = {
     voiceReply: "Voice reply (read responses aloud)",
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
+    ttsSpeed: "Скорость речи",
     settingsHint: "Recording happens in your browser; recognition uses the server's local model (faster-whisper).",
     replyActive: "Reading reply aloud — click to stop",
     stopReply: "Stop reading",
