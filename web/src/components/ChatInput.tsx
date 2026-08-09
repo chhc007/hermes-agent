@@ -12,7 +12,7 @@
  * Enter/Tab/arrows are consumed by the popover instead of submitting.
  */
 
-import { ImagePlus, Maximize2, Minimize2, Send, X } from "lucide-react";
+import { ImagePlus, Maximize2, Minimize2, Send, Square, X } from "lucide-react";
 import {
   forwardRef,
   useCallback,
@@ -48,6 +48,13 @@ interface ChatInputProps {
     attachments: File[],
   ) => boolean | void | Promise<boolean | void>;
   disabled?: boolean;
+  /**
+   * True while a turn is running: the send button becomes a Stop button.
+   * Clicking it calls `onStop` (session.interrupt) instead of sending.
+   */
+  running?: boolean;
+  /** Called when the running-state send button (now Stop) is clicked. */
+  onStop?: () => void;
   /** Reports the current composer value so the parent can run completion. */
   onInputChange?: (value: string) => void;
   /**
@@ -79,6 +86,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
     {
       onSend,
       disabled,
+      running,
+      onStop,
       onInputChange,
       onCompletionKey,
       className,
@@ -310,17 +319,37 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
 
           <button
             type="button"
-            onClick={() => void submit()}
-            disabled={disabled || (!value.trim() && !attachments.length)}
-            aria-label={t.chat.sendMessage}
+            onClick={() => {
+              if (running) {
+                onStop?.();
+              } else {
+                void submit();
+              }
+            }}
+            disabled={
+              running
+                ? false
+                : disabled || (!value.trim() && !attachments.length)
+            }
+            aria-label={running ? (t.chat.stop ?? "Stop") : t.chat.sendMessage}
+            title={
+              running
+                ? (t.chat.stop ?? "Stop generation")
+                : t.chat.sendMessage
+            }
             className={cn(
               "flex size-8 shrink-0 items-center justify-center rounded-md transition-colors",
-              "bg-primary text-primary-foreground",
-              "hover:bg-primary/90",
+              running
+                ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                : "bg-primary text-primary-foreground hover:bg-primary/90",
               "disabled:cursor-not-allowed disabled:opacity-40",
             )}
           >
-            <Send className="size-4" />
+            {running ? (
+              <Square className="size-3.5 fill-current" />
+            ) : (
+              <Send className="size-4" />
+            )}
           </button>
         </div>
 

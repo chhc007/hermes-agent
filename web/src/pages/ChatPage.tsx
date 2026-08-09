@@ -2143,19 +2143,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                   onModelClick={() => setModelPickerOpen(true)}
                   className="order-last w-full min-w-0 md:order-none md:w-auto md:flex-1"
                 />
-                <div className="ml-auto flex shrink-0 items-center gap-1">
-                  {chatStream.meta.running && (
-                    <button
-                      type="button"
-                      onClick={stopTurn}
-                      className="inline-flex items-center gap-1 rounded border border-destructive/50 bg-destructive/15 px-1.5 py-0.5 text-[10px] font-medium text-destructive transition-colors hover:bg-destructive/25"
-                      title={t.chat.stop ?? "Stop generation"}
-                    >
-                      <span className="size-2 rounded-[1px] bg-current" aria-hidden />
-                      {t.chat.stop ?? "Stop"}
-                    </button>
-                  )}
-                </div>
               </div>
               {chatStream.compacting && (
                 <div className="flex shrink-0 items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-1.5 text-xs text-warning">
@@ -2209,6 +2196,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                   onInputChange={setComposerText}
                   onCompletionKey={handleCompletionKey}
                   disabled={ptyState !== "open"}
+                  running={chatStream.meta.running}
+                  onStop={stopTurn}
                   voiceSettings={voiceSettings}
                   onVoiceTranscript={handleVoiceTranscript}
                   onVoiceSettingsChange={handleVoiceSettingsChange}

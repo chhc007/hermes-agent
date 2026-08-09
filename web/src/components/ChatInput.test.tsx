@@ -289,4 +289,33 @@ describe("ChatInput", () => {
     });
     expect(container.querySelector('[data-slot="chat-input-attachments"]')).toBeNull();
   });
+
+  it("becomes a Stop button while running and stops instead of sending", async () => {
+    const onSend = vi.fn();
+    const onStop = vi.fn();
+    await render(<ChatInput onSend={onSend} running onStop={onStop} />);
+
+    await setValue("hello");
+    // The send slot is now labelled Stop (never disabled, even with text).
+    const stopBtn = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.getAttribute("aria-label") === "Stop",
+    ) as HTMLButtonElement;
+    expect(stopBtn).toBeTruthy();
+    expect(stopBtn.disabled).toBe(false);
+
+    await act(async () => stopBtn.click());
+    expect(onStop).toHaveBeenCalledTimes(1);
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("returns to a Send button after the run ends", async () => {
+    const onSend = vi.fn();
+    const onStop = vi.fn();
+    await render(<ChatInput onSend={onSend} onStop={onStop} />);
+    await setValue("hello");
+    expect(sendButton()).toBeTruthy();
+    expect(Array.from(container.querySelectorAll("button")).some((b) =>
+      b.getAttribute("aria-label") === "Stop",
+    )).toBe(false);
+  });
 });
