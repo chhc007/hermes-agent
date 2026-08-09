@@ -43,8 +43,7 @@
 | 🔁 **终端切会话同步** | TUI 内 `/resume`、`/sessions`、`/compact`（session key 旋转）后气泡自动清空旧消息并重拉新会话历史，与终端保持一致（v1.6） |
 | 📊 **上下文使用量** | 消息列表顶部显示 context 用量条（`used/max tok` + 填充条）+ 压缩次数徽标，数据来自 `session.info.usage`（v1.6） |
 | 🗜️ **压缩兼容** | `/compact`/`/compress` 时显示「正在压缩上下文」banner（`status.update` kind=compacting/compressing），压缩后用量/历史自动刷新（v1.6） |
-| ⏹️ **停止生成** | agent 运行中显示红色 Stop 按钮（`session.interrupt` RPC，同 TUI Ctrl+C）（v1.7） |
-| ↶↻ **撤销/重试** | 一键撤销上一轮（`session.undo`）或重试最后一条消息（v1.7） |
+| ⏹️ **停止生成** | agent 运行中发送按钮变为红色方块停止按钮（`session.interrupt` RPC，同 TUI Ctrl+C），停止后自动恢复发送（v1.7 → v1.8.3 并入发送按钮） |
 | 🧭 **当前模型+切换** | 状态栏显示 model + 推理强度，点击弹出官方模型选择器（`model.options`/`config.set`）（v1.7） |
 | ⛓️ **子代理 HUD** | `subagent.*` 事件渲染活跃子代理数（v1.7） |
 | 📋 **todo 面板** | `tool.start.todos` 渲染 agent 任务列表 + 进度（v1.7） |
@@ -402,17 +401,17 @@ v1.7.7 的序列补发被取代。
 **验证**：`scripts/run_tests.sh tests/hermes_cli/test_web_server.py` → 147/147 全绿。
 用户实测（单标签 + 刷新）气泡 chat 实时同步 ✓。
 
-### Stop 按钮实时显示（v1.7.11）
+### Stop 按钮实时显示（v1.7.11，v1.8.3 起并入发送按钮）
 
 **问题**：agent 开始跑任务时停止按钮不出现，刷新后才出现。
-**根因**：Stop 按钮基于 `meta.running`，但该字段只在 `session.info` 事件更新；
-`turn.snapshot` 轮询帧（streaming 标志）未更新它，`message.complete` 也不重置。
-实时事件不可靠时 running 状态无法到达前端 → 按钮不实时出现；刷新后
-session.info 补发才点亮。
+**根因**：停止按钮（v1.8.3 起 = 发送按钮的 running 态）基于 `meta.running`，
+但该字段只在 `session.info` 事件更新；`turn.snapshot` 轮询帧（streaming
+标志）未更新它，`message.complete` 也不重置。实时事件不可靠时 running
+状态无法到达前端 → 按钮不实时出现；刷新后 session.info 补发才点亮。
 **修复**（`chat-event-stream.ts` reducer）：
 - `turn.snapshot` → `meta.running = streaming`（即使 segments 为空也更新，
   thinking/tool 帧可能晚于回合开始）
-- `message.complete` → 重置 `meta.running = false`（回合结束按钮消失）
+- `message.complete` → 重置 `meta.running = false`（回合结束按钮恢复发送）
 **验证**：前端新增 Stop 按钮驱动用例（snapshot 点亮 / complete 复位）；
 357 测试全绿。纯前端，刷新即生效。
 
@@ -635,20 +634,22 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.8.1**（当前，稳定）：**撤销/重试/停止按钮可靠性修复** — 用户反馈 Web
-  聊天页的 ↶ 撤销 / ↻ 重试 / 停止按钮"经常没效果、没交互感"。
-  1) **根因**：`session.undo` 成功后 `/api/events` 不带用户帧，但
-  `undoLast`/`retryLast` 缺了本地 `trimMessagesBefore`（`handleEditMessage`
-  有、它们没有）→ 后端已回退、前端气泡纹丝不动；② undo/retry 按钮在
-  `meta.running` 时不禁用，但后端 4009 拒绝运行中 undo → 点击必失败且
-  catch 空吞；③ `stopTurn`/`undoLast` 的 catch 全部静默，无任何 banner。
-  2) **修复**：undo 成功且 `removed>0` 时本地 trim 到最后一条 user 气泡
-  （与 edit 同款契约）；undo/retry 按钮运行中禁用；`stopTurn`/`undoLast`
-  失败时 `setBanner` 显示原因（新增 i18n：undoNoSession/undoBusy/
-  undoFailed/stopNoSession/stopFailed）；`retryLast` 先取文本再 undo
-  （避免 trim 后取到上一条 user）。测试 407 passed（新增 3 个）。
-  改动：`web/src/pages/ChatPage.tsx` + `ChatPage.test.tsx` +
-  `web/src/i18n/{types,en,zh}.ts`。
+- **v1.8.3**（当前，稳定）：**停止按钮并入发送按钮（ChatGPT 风格）** — agent
+  运行时（`meta.running`）发送按钮变为红色方块停止按钮，点击调
+  `session.interrupt` 停止当前回合；停止后立即恢复发送按钮。输入框运行中
+  不禁用，可随时打字 Enter 发送新消息打断（barge-in）。工具条上的独立
+  Stop 按钮移除。改动：`ChatInput.tsx`（新增 `running`/`onStop` props，
+  发送⇄停止双态）+ `ChatPage.tsx`（传参、删工具条 Stop）+ `ChatInput.test.tsx`
+  （新增 2 测试：运行变停止调 onStop、结束后恢复发送）。测试 406 passed。
+- **v1.8.2**（稳定）：**移除 undo/retry 工具条按钮** — 用户认为 ↶ 撤销 /
+  ↻ 重试按钮无用，删除按钮 JSX 与 `undoLast`/`retryLast` 函数（纯删除约
+  175 行），保留 `handleEditMessage`（编辑历史消息直接调 `session.undo`）。
+  `session.undo` 后端能力保留（TUI `/undo`、编辑历史仍可用）。
+- **v1.8.1**（历史，已被 v1.8.2 取代）：**撤销/重试/停止按钮可靠性修复** —
+  曾修复：`session.undo` 成功后本地 `trimMessagesBefore`、undo/retry 运行中
+  禁用、失败 banner 反馈。注：undo/retry 按钮已在 v1.8.2 移除，相关 i18n
+  key（undoNoSession/undoBusy/undoFailed/stopNoSession/stopFailed）仍在
+  `en.ts`/`zh.ts` 中（`handleEditMessage` 的 editBusy 复用同套机制）。
 - **v1.8**（稳定）：**编辑历史用户消息 + 从此处重新生成** — 用户消息
   气泡悬停显示 ✎ 编辑按钮 → 内联 textarea（预填 `stripVoiceDirective` 后的原文，
   Enter 保存 / Esc 取消 / 空文本禁用）→ 保存时把会话回退到该消息之前并用编辑后
