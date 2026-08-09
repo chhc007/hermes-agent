@@ -981,58 +981,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       });
   }, [completionGw, resumeParam, t]);
 
-  // Undo the last exchange (mirrors TUI /undo → session.undo).
-  const undoLast = useCallback(async () => {
-    const sid =
-      chatStreamRef.current?.lastEventSessionId ??
-      chatStreamRef.current?.activeSessionId ??
-      resumeParam;
-    if (!sid) {
-      setBanner(t.chat.undoNoSession ?? "No active session to undo.");
-      return false;
-    }
-    // session.undo rejects with 4009 while a turn is running; the button is
-    // disabled while running, but a stale running flag (desync) should still
-    // surface a message instead of failing silently.
-    if (chatStreamRef.current?.meta.running) {
-      setBanner(t.chat.undoBusy ?? "Session is busy — stop the current turn first.");
-      return false;
-    }
-    try {
-      const res = await completionGw.request<{ removed?: number }>("session.undo", {
-        session_id: sid,
-      });
-      const removed = res?.removed ?? 0;
-      if (removed > 0) {
-        // Local-optimistic trim: the /api/events feed carries NO user-input
-        // frames, so after a rewind RPC we must drop the last user bubble and
-        // everything after it ourselves — there is no event that does it for
-        // us (same pattern as handleEditMessage).
-        const msgs = [...(chatStreamRef.current?.messages ?? [])];
-        const lastUser = msgs.reverse().find((m) => m.role === "user");
-        if (lastUser) trimMessagesBeforeRef.current(lastUser.id);
-      }
-      return removed > 0;
-    } catch (e) {
-      setBanner(`${t.chat.undoFailed ?? "Undo failed"}: ${(e as Error)?.message ?? "unknown"}`);
-      return false;
-    }
-  }, [completionGw, resumeParam, t]);
-
-  // Retry the last user message (mirrors TUI /retry → session.undo + resend).
-  const retryLast = useCallback(async () => {
-    // Capture the text BEFORE undo — undo trims the last user bubble from the
-    // local list, so looking it up afterwards would find the PREVIOUS user
-    // message and resend the wrong turn.
-    const lastUser = [...chatStreamRef.current?.messages ?? []]
-      .reverse()
-      .find((m) => m.role === "user");
-    if (!lastUser?.text) return;
-    const ok = await undoLast();
-    if (!ok) return;
-    sendChatPromptRef.current(lastUser.text);
-  }, [undoLast]);
-
   // Edit a historical user message and regenerate from that point: rewind the
   // session to just before the target (session.undo with count = the number of
   // real user turns from the target to the end — mirrors CLI undo_last(n)),
@@ -2196,28 +2144,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                   className="order-last w-full min-w-0 md:order-none md:w-auto md:flex-1"
                 />
                 <div className="ml-auto flex shrink-0 items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => void undoLast()}
-                    disabled={
-                      chatStream.meta.running || !chatStream.messages.length
-                    }
-                    className="inline-flex items-center gap-0.5 rounded border border-border/60 bg-secondary/30 px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-secondary/50 disabled:cursor-not-allowed disabled:opacity-40"
-                    title={t.chat.undo ?? "Undo last exchange"}
-                  >
-                    ↶
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void retryLast()}
-                    disabled={
-                      chatStream.meta.running || !chatStream.messages.length
-                    }
-                    className="inline-flex items-center gap-0.5 rounded border border-border/60 bg-secondary/30 px-1.5 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-secondary/50 disabled:cursor-not-allowed disabled:opacity-40"
-                    title={t.chat.retry ?? "Retry last message"}
-                  >
-                    ↻
-                  </button>
                   {chatStream.meta.running && (
                     <button
                       type="button"
