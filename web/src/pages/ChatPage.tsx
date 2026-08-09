@@ -44,6 +44,7 @@ import { ChatInput, type ChatInputHandle } from "@/components/ChatInput";
 import { VoiceReply } from "@/components/VoiceReply";
 import {
   VOICE_INPUT_DIRECTIVE,
+  buildVoiceDirectives,
   loadVoiceSettings,
   saveVoiceSettings,
   type VoiceSettings as VoiceSettingsT,
@@ -252,12 +253,17 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Voice mode: settings persisted in localStorage; reply text fed by the
-  // chat event stream when voiceReply is enabled. `voiceMuted` is the
-  // floating-button mute toggle — when muted, live replies are NOT spoken.
+  // chat event stream when the LAST user message was a hold-to-talk voice
+  // input. `voiceMuted` is the floating-button mute toggle — when muted,
+  // live replies are NOT spoken until unmuted.
+  // v1.7.28-29: voice reply is bound to REAL voice input (fromVoice), not
+  // the master switch. The indicator only appears after a voice send, and
+  // speech only fires for the reply to that voice message.
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsT>(() =>
     loadVoiceSettings(),
   );
   const [voiceMuted, setVoiceMuted] = useState(false);
+  const [lastWasVoice, setLastWasVoice] = useState(false);
   const [voiceReplyText, setVoiceReplyText] = useState("");
   const [voiceReplyRun, setVoiceReplyRun] = useState(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -450,39 +456,33 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // GatewayClient is shared with nothing else — clarify.respond mints its own.
   const [composerText, setComposerText] = useState("");
 
-  // Voice reply: when enabled AND the assistant message was generated live
-  // (streaming → complete) in THIS session, speak its final text. History
-  // loaded on mount is already "complete" and must NOT trigger speech.
+  // Voice reply: when the LAST user message was a hold-to-talk voice input
+  // AND the assistant message was generated live (streaming → complete) in
+  // THIS session, speak its final text. History loaded on mount is already
+  // "complete" and must NOT trigger speech.
   //
   // IMPORTANT: this effect's deps are ONLY chatStream.messages — NOT
-  // voiceSettings.voiceReply / voiceMuted. Re-running on a settings change
-  // would re-inspect the LAST message: toggling the reply switch on (or
-  // unmuting) would replay the most recent reply as if it were new. The
-  // switch/mute state is read through refs so only a genuinely NEW message
-  // (streaming → complete transition) can trigger speech.
-  const voiceReplyRef = useRef(voiceSettings.voiceReply);
+  // lastWasVoice / voiceMuted. Re-running on a settings change would
+  // re-inspect the LAST message: toggling mute (or a voice/typed switch)
+  // would replay the most recent reply as if it were new. The voice/mute
+  // state is read through refs so only a genuinely NEW message (streaming →
+  // complete transition) can trigger speech.
   const voiceMutedRef = useRef(voiceMuted);
-  // Tracks whether voice reply was previously ON, so toggling it OFF injects
-  // a one-shot directive telling the model to stop being brief (a prior
-  // "语音播报模式" directive would otherwise keep biasing short answers).
-  const voiceReplyWasOnRef = useRef(voiceSettings.voiceReply);
+  // Tracks whether the PREVIOUS sent message was a voice (hold-to-talk)
+  // input. v1.7.29: the brevity directive is per-message (fromVoice), so
+  // when a non-voice send follows a voice one we inject a one-shot
+  // "resume normal replies" directive to clear any lingering brevity bias.
+  // v1.7.30: also gates VOICE REPLY SPEECH — only the reply to a real
+  // voice input is spoken aloud; typed messages never get spoken replies.
+  const lastWasVoiceRef = useRef(false);
   const lastStreamingMsgIdRef = useRef<string | null>(null);
   const lastSpokenMsgRef = useRef<string | null>(null);
   useEffect(() => {
-    const wasOn = voiceReplyRef.current;
-    voiceReplyRef.current = voiceSettings.voiceReply;
     voiceMutedRef.current = voiceMuted;
-    // Toggling the reply switch ON must NOT replay the last message: reset
-    // the streaming/spoken markers so only messages that complete AFTER the
-    // switch turns on (or after unmute) can be spoken.
-    if (!wasOn && voiceSettings.voiceReply) {
-      lastStreamingMsgIdRef.current = null;
-      lastSpokenMsgRef.current = null;
-    }
     if (voiceMuted) {
       lastSpokenMsgRef.current = null; // allow the next live reply after unmute
     }
-  }, [voiceSettings.voiceReply, voiceMuted]);
+  }, [voiceMuted]);
 
   useEffect(() => {
     const msgs = chatStream.messages;
@@ -498,7 +498,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     if (last.status !== "complete") return;
     if (lastStreamingMsgIdRef.current !== last.id) return; // history, not live
     if (voiceMutedRef.current) return;
-    if (!voiceReplyRef.current) return;
+    if (!lastWasVoiceRef.current) return; // only replies to voice input are spoken
     if (!last.text || last.text.length < 2) return;
     if (lastSpokenMsgRef.current === last.id) return;
     lastSpokenMsgRef.current = last.id;
@@ -879,22 +879,16 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       // instead of reading a long markdown wall aloud. Explicitly preserves
       // tool calls / investigation depth: only the FINAL visible reply is
       // compressed, not the work itself.
-      // Voice input: append a marker so the model knows the text came from
-      // speech recognition and may contain recognition errors. The user's
-      // bubble strips it (MessageBubble shows a mic badge instead).
-      const voiceMarker = opts?.fromVoice ? `\n\n${VOICE_INPUT_DIRECTIVE}` : "";
-      const brevityDirective =
-        voiceSettings.voiceReply && !voiceMuted
-          ? `\n\n[系统提示] 当前处于语音播报模式。请照常执行任务：该查的资料照查、该调的工具照调、该有的步骤照做，过程与思考不受影响。仅最终回复需要：用简洁口语化的语言，控制在 3 句话以内，先给结论。详细内容请用"详情见回复"等简短提示代替，因为整段回复会被语音朗读。`
-          : "";
-      // One-shot: when the user turns voice reply OFF, tell the model to
-      // resume normal-length replies (a previous brevity directive may still
-      // be biasing it toward terse answers).
-      const normalDirective =
-        !voiceSettings.voiceReply && voiceReplyWasOnRef.current
-          ? `\n\n[系统提示] 语音回复已关闭，请正常详细回复，无需保持简短。`
-          : "";
-      voiceReplyWasOnRef.current = voiceSettings.voiceReply;
+      // v1.7.29: the brevity directive is bound to THIS message being a
+      // hold-to-talk voice input (opts.fromVoice) — NOT the voice switch.
+      // Typing a normal message gets no directive, so the next reply is
+      // naturally back to full detail; a one-shot "resume normal" directive
+      // is injected when the previous send was voice and this one is not
+      // (clears any lingering brevity bias from the prior turn).
+      const { voiceMarker, brevityDirective, normalDirective, lastWasVoiceNext } =
+        buildVoiceDirectives(opts ?? {}, voiceMuted, lastWasVoiceRef.current);
+      lastWasVoiceRef.current = lastWasVoiceNext;
+      setLastWasVoice(lastWasVoiceNext);
       const sentText = `${fullText}${voiceMarker}${brevityDirective}${normalDirective}`;
       // Re-check the socket after the (async) upload — it may have dropped
       // or reconnected while we were waiting.
@@ -934,7 +928,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       sendUserMessageRef.current(display);
       return true;
     },
-    [voiceSettings.voiceReply, voiceMuted],
+    [voiceMuted],
   );
   const sendChatPromptRef = useRef(sendChatPrompt);
   useEffect(() => {
@@ -2176,11 +2170,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               <div className="relative">
                 {/* Single VoiceReply instance, above the composer — NOT
                     re-mounted when the composer toggles voice/text mode
-                    (a remount would replay the last reply). */}
-                {voiceSettings.voiceReply && (
+                    (a remount would replay the last reply). v1.7.30: shown
+                    only while the LAST user message was voice input — a
+                    typed message hides the indicator (no spoken reply). */}
+                {lastWasVoice && (
                   <div className="mb-1 flex items-center justify-end gap-1 px-0.5">
                     <VoiceReply
-                      enabled={voiceSettings.voiceReply}
+                      enabled={lastWasVoice}
                       muted={voiceMuted}
                       onToggleMuted={() => setVoiceMuted((m) => !m)}
                       ttsProvider={voiceSettings.ttsProvider}

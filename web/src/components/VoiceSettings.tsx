@@ -2,9 +2,10 @@
  * VoiceSettings — popover panel for voice mode preferences.
  *
  * Mirrors the ChatGPT voice-mode concept but for the Hermes chat view:
- *   - master switch (voice input on/off)
+ *   - master switch (voice input on/off; since v1.7.28 voice REPLY is bound
+ *     to this switch — enabling input also reads replies aloud)
  *   - send mode: auto (send transcript immediately) vs confirm (fill composer)
- *   - voice reply: speak assistant replies aloud via server TTS
+ *   - STT/TTS provider + speech speed
  */
 
 import { Settings2 } from "lucide-react";
@@ -36,9 +37,9 @@ export function VoiceSettings({ settings, onChange, className }: VoiceSettingsPr
   // Which side of the trigger the panel expands toward, plus a width cap so
   // the panel never runs off the viewport on narrow phones.
   const [panelPlacement, setPanelPlacement] = useState<{
-    align: "left" | "right";
+    left?: number;
     maxWidth?: number;
-  }>({ align: "right" });
+  }>({});
 
   useEffect(() => {
     if (!open) return;
@@ -52,30 +53,52 @@ export function VoiceSettings({ settings, onChange, className }: VoiceSettingsPr
   }, [open]);
 
   // The panel is absolutely positioned relative to the (narrow) trigger
-  // button. Right-aligned it expands leftward 256px, which on phones can push
-  // the panel off the left edge of the viewport. Measure the trigger and pick
-  // an alignment + width cap that keep the whole panel on screen.
+  // button. Compute the panel's desired VIEWPORT left, clamp it to keep the
+  // whole panel on screen (both edges, phones AND desktops), then convert to
+  // a RELATIVE offset from the button container for style.left. Re-measure
+  // on resize so a window change while the panel is open re-clamps it.
+  // (v1.7.32)
   useEffect(() => {
     if (!open || !panelRef.current) return;
-    const rect = panelRef.current.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const PANEL_W = 256;
-    let align: "left" | "right" = "right";
-    let maxWidth: number | undefined;
-    if (rect.right - PANEL_W < 8) {
-      // Leftward expansion would overflow the viewport's left edge — flip to
-      // rightward expansion (aligned to the trigger's left edge).
-      align = "left";
-      const rightEdge = rect.left + PANEL_W;
-      if (rightEdge > vw - 8) {
-        maxWidth = Math.max(200, vw - 8 - rect.left - 8);
+    const measure = () => {
+      const el = panelRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const PANEL_W = 256;
+      // Desired: right-aligned to the button (expands leftward). If that
+      // would overflow the left edge, expand rightward instead. Then clamp
+      // both edges so the whole panel stays inside the viewport.
+      let left = rect.right - PANEL_W;
+      let maxWidth: number | undefined;
+      if (left < 8) {
+        left = rect.left;
       }
-    }
-    setPanelPlacement({ align, maxWidth });
+      if (left + PANEL_W > vw - 8) {
+        // Right edge would overflow — clamp width (and re-clamp left so the
+        // narrowed panel still sits against the button).
+        maxWidth = Math.max(200, vw - 8 - left - 8);
+        left = Math.min(left, vw - 8 - (maxWidth ?? PANEL_W) - 8);
+      }
+      if (left < 8) left = 8;
+      // Convert viewport left → offset relative to the button container.
+      const relativeLeft = left - rect.left;
+      setPanelPlacement({ left: relativeLeft, maxWidth });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
   }, [open]);
 
   const update = (patch: Partial<VoiceSettingsT>) => {
     const next = { ...settings, ...patch };
+    // v1.7.28: voice reply is bound to the master switch — enabling voice
+    // input also enables spoken replies, and disabling it turns both off.
+    next.voiceReply = next.enabled;
     onChange(next);
     saveVoiceSettings(next);
   };
@@ -100,9 +123,11 @@ export function VoiceSettings({ settings, onChange, className }: VoiceSettingsPr
           className={cn(
             "absolute bottom-10 z-50 w-64 rounded-lg border border-border/70 bg-background/95 p-3 shadow-lg backdrop-blur",
             "max-h-[55vh] overflow-y-auto",
-            panelPlacement.align === "left" ? "left-0" : "right-0",
           )}
-          style={panelPlacement.maxWidth != null ? { maxWidth: panelPlacement.maxWidth } : undefined}
+          style={{
+            left: panelPlacement.left,
+            maxWidth: panelPlacement.maxWidth,
+          }}
           data-slot="voice-settings-panel"
         >
           <div className="mb-2 text-xs font-medium text-foreground">
@@ -133,16 +158,14 @@ export function VoiceSettings({ settings, onChange, className }: VoiceSettingsPr
             />
           </label>
 
-          {/* Voice reply */}
-          <label className="flex cursor-pointer items-center justify-between gap-2 py-1.5 text-sm text-foreground/90">
+          {/* Voice reply — bound to the master switch (v1.7.28): turning
+              voice input on also reads replies aloud. No separate toggle. */}
+          <div className="flex items-center justify-between gap-2 py-1.5 text-sm text-foreground/90">
             <span>{t.voice.voiceReply}</span>
-            <input
-              type="checkbox"
-              checked={settings.voiceReply}
-              onChange={(e) => update({ voiceReply: e.target.checked })}
-              className="size-3.5 accent-primary"
-            />
-          </label>
+            <span className="text-xs text-muted-foreground/80">
+              {settings.enabled ? t.voice.replyOn : t.voice.replyOff}
+            </span>
+          </div>
 
           {/* STT provider switcher */}
           <div className="flex items-center justify-between gap-2 py-1.5 text-sm text-foreground/90">

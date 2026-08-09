@@ -29,6 +29,7 @@ vi.mock("@/i18n", () => ({
         exitVoiceMode: "Back to text input",
         holdToTalk: "Hold to talk",
         releaseToSend: "Release to send",
+        slideToCancel: "Slide up to cancel",
         releaseToCancel: "Release to cancel",
         transcribing: "Transcribing…",
         noSpeech: "No speech detected",
@@ -187,9 +188,9 @@ describe("VoiceHoldButton", () => {
         ),
       ).toBe(true);
     });
-    // Slide up beyond the cancel distance (72px).
+    // Slide up beyond the cancel distance (120px default).
     await act(async () => {
-      pointerMove(btn, 60); // dy = 140 > 72 → cancelling
+      pointerMove(btn, 60); // dy = 140 > 120 → cancelling
     });
     await act(async () => {
       pointerUp(btn, 60);
@@ -197,6 +198,35 @@ describe("VoiceHoldButton", () => {
     // Cancelled → no transcript.
     await new Promise((r) => setTimeout(r, 20));
     expect(onTranscript).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("does NOT cancel on a small in-button movement (v1.7.31)", async () => {
+    await render(
+      <VoiceHoldButton enabled onTranscript={onTranscript} onError={onError} />
+    );
+    const btn = holdButton();
+    await act(async () => {
+      pointerDown(btn, 200);
+    });
+    await vi.waitFor(() => {
+      expect(
+        Array.from(container.querySelectorAll("button")).some((b) =>
+          (b.getAttribute("aria-label") ?? "").includes("Release"),
+        ),
+      ).toBe(true);
+    });
+    // Small upward wiggle (dy = 40 < 120) must stay in recording state.
+    await act(async () => {
+      pointerMove(btn, 160); // dy = 40 → still recording
+    });
+    await act(async () => {
+      pointerUp(btn, 160);
+    });
+    // Released inside the button → transcribe + send.
+    await vi.waitFor(() => {
+      expect(onTranscript).toHaveBeenCalledWith("你好世界");
+    });
     expect(onError).not.toHaveBeenCalled();
   });
 

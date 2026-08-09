@@ -214,6 +214,9 @@ export const ko: Translations = {
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
+    replyOn: "음성 입력과 연동",
+    replyOff: "음성 입력과 함께 꺼짐",
+
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
     ttsSpeed: "말하기 속도",
@@ -230,6 +233,8 @@ export const ko: Translations = {
     holdToTalk: "Hold to talk",
     releaseToSend: "Release to send",
     releaseToCancel: "Release to cancel",
+    slideToCancel: "위로 밀어 취소",
+
   },
 
   analytics: {

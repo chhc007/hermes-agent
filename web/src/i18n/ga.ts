@@ -214,6 +214,9 @@ export const ga: Translations = {
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
+    replyOn: "Ar siúl le hionchur gutha",
+    replyOff: "As le hionchur gutha",
+
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
     ttsSpeed: "Luas cainte",
@@ -230,6 +233,8 @@ export const ga: Translations = {
     holdToTalk: "Hold to talk",
     releaseToSend: "Release to send",
     releaseToCancel: "Release to cancel",
+    slideToCancel: "Sleamhnaigh suas chun cealú",
+
   },
 
   analytics: {

@@ -248,6 +248,8 @@ export interface Translations {
     enableVoice: string;
     autoSend: string;
     voiceReply: string;
+    replyOn: string;
+    replyOff: string;
     sttProvider: string;
     ttsProvider: string;
     ttsSpeed: string;
@@ -263,6 +265,7 @@ export interface Translations {
     exitVoiceMode: string;
     holdToTalk: string;
     releaseToSend: string;
+    slideToCancel: string;
     releaseToCancel: string;
   };
 

@@ -214,6 +214,9 @@ export const zhHant: Translations = {
     enableVoice: "啟用語音輸入",
     autoSend: "說完自動傳送",
     voiceReply: "語音回覆（朗讀回覆）",
+    replyOn: "隨語音輸入開啟",
+    replyOff: "隨語音輸入關閉",
+
     sttProvider: "語音辨識引擎",
     ttsProvider: "語音合成引擎",
     ttsSpeed: "語速",
@@ -230,6 +233,8 @@ export const zhHant: Translations = {
     holdToTalk: "按住 說話",
     releaseToSend: "鬆開 傳送",
     releaseToCancel: "鬆開 取消",
+    slideToCancel: "↑ 上滑取消",
+
   },
 
   analytics: {

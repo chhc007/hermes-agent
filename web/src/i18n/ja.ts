@@ -214,6 +214,9 @@ export const ja: Translations = {
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
+    replyOn: "音声入力と連動",
+    replyOff: "音声入力オフで無効",
+
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
     ttsSpeed: "話す速度",
@@ -230,6 +233,8 @@ export const ja: Translations = {
     holdToTalk: "Hold to talk",
     releaseToSend: "Release to send",
     releaseToCancel: "Release to cancel",
+    slideToCancel: "上にスライドしてキャンセル",
+
   },
 
   analytics: {

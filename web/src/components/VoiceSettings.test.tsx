@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /**
- * VoiceSettings popover tests: toggling master switch, send mode, voice reply.
+ * VoiceSettings popover tests: toggling master switch, send mode, providers.
+ * (Voice reply is bound to the master switch since v1.7.28 — no own toggle.)
  */
 
 import { act, type ReactNode } from "react";
@@ -16,6 +17,8 @@ vi.mock("@/i18n", () => ({
         enableVoice: "Enable voice input",
         autoSend: "Auto-send",
         voiceReply: "Voice reply",
+        replyOn: "On with voice input",
+        replyOff: "Off with voice input",
         sttProvider: "Recognition engine",
         ttsProvider: "Voice engine",
         settingsHint: "hint",
@@ -72,10 +75,10 @@ describe("VoiceSettings", () => {
       settingsButton().click();
     });
     const boxes = checkboxes();
-    expect(boxes.length).toBe(3);
+    // v1.7.28: voice reply is bound to the master switch — no separate toggle.
+    expect(boxes.length).toBe(2);
     expect(boxes[0].checked).toBe(true); // enabled
     expect(boxes[1].checked).toBe(true); // auto-send
-    expect(boxes[2].checked).toBe(true); // voice reply
   });
 
   it("emits changes when toggled", async () => {
@@ -122,10 +125,40 @@ describe("VoiceSettings", () => {
     expect(onChange).toHaveBeenCalledWith({
       enabled: true,
       sendMode: "auto",
-      voiceReply: false,
+      voiceReply: true, // v1.7.28: bound to enabled
       sttProvider: "mimo",
       ttsProvider: "mimo",
       ttsSpeed: 1,
     });
+  });
+
+  it("clamps the panel inside the viewport on both edges (v1.7.32)", async () => {
+    // Button hugging the LEFT edge → panel must not run off the viewport.
+    const originalGBCR = Element.prototype.getBoundingClientRect;
+    Element.prototype.getBoundingClientRect = vi.fn(function (this: Element) {
+      if (this === container.querySelector(".relative")) {
+        return { left: 4, right: 36, top: 100, bottom: 136, width: 32, height: 36, x: 4, y: 100, toJSON: () => ({}) } as DOMRect;
+      }
+      return originalGBCR.call(this);
+    });
+    try {
+      await render(
+        <VoiceSettings
+          settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo", ttsSpeed: 1 }}
+          onChange={vi.fn()}
+        />,
+      );
+      await act(async () => {
+        settingsButton().click();
+      });
+      const panel = container.querySelector('[data-slot="voice-settings-panel"]') as HTMLElement;
+      expect(panel).toBeTruthy();
+      // Button at viewport left=4,right=36: viewport-left candidate = 36-256
+      // = -220 → flip to expand rightward → viewport left clamped to 8, i.e.
+      // offset 8-4=4px from the button container. Panel stays inside viewport.
+      expect(panel.style.left).toBe("4px");
+    } finally {
+      Element.prototype.getBoundingClientRect = originalGBCR;
+    }
   });
 });

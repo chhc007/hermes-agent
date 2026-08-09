@@ -90,20 +90,37 @@ describe("VoiceReply", () => {
     expect(indicator()).toBeNull();
   });
 
-  it("synthesizes and plays the reply when enabled and not muted", async () => {
+  it("synthesizes and plays the reply when a new runId arrives", async () => {
     const audioProto = playStub();
-    await render(<VoiceReply {...baseProps} text="你好" runId={1} />);
+    await render(<VoiceReply {...baseProps} />); // runId=0, nothing to play
+    await act(async () => {
+      root.render(<VoiceReply {...baseProps} text="你好" runId={1} />);
+    });
     await vi.waitFor(() => {
       expect(speakMock).toHaveBeenCalledWith("你好", undefined, undefined);
       expect(audioProto.play).toHaveBeenCalled();
     });
   });
 
+  it("does NOT replay an already-spoken runId on remount", async () => {
+    // Simulates the indicator being hidden (typed input) then shown again
+    // (voice input) with a stale runId — the reply must NOT replay. (v1.7.30)
+    playStub();
+    await render(<VoiceReply {...baseProps} text="你好" runId={3} />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(speakMock).not.toHaveBeenCalled();
+  });
+
   it("passes the configured TTS speed to the synth call", async () => {
     playStub();
     await render(
-      <VoiceReply {...baseProps} ttsProvider="edge" ttsSpeed={1.5} text="你好" runId={1} />,
+      <VoiceReply {...baseProps} ttsProvider="edge" ttsSpeed={1.5} />,
     );
+    await act(async () => {
+      root.render(
+        <VoiceReply {...baseProps} ttsProvider="edge" ttsSpeed={1.5} text="你好" runId={1} />,
+      );
+    });
     await vi.waitFor(() => {
       expect(speakMock).toHaveBeenCalledWith("你好", "edge", 1.5);
     });
@@ -111,7 +128,10 @@ describe("VoiceReply", () => {
 
   it("does NOT synthesize when muted", async () => {
     playStub();
-    await render(<VoiceReply {...baseProps} muted text="你好" runId={1} />);
+    await render(<VoiceReply {...baseProps} muted />);
+    await act(async () => {
+      root.render(<VoiceReply {...baseProps} muted text="你好" runId={1} />);
+    });
     await new Promise((r) => setTimeout(r, 20));
     expect(speakMock).not.toHaveBeenCalled();
   });
@@ -130,9 +150,12 @@ describe("VoiceReply", () => {
     playStub();
     speakMock.mockRejectedValueOnce(new Error("synthesis down"));
     const onError = vi.fn();
-    await render(
-      <VoiceReply {...baseProps} text="你好" runId={1} onError={onError} />,
-    );
+    await render(<VoiceReply {...baseProps} onError={onError} />);
+    await act(async () => {
+      root.render(
+        <VoiceReply {...baseProps} text="你好" runId={1} onError={onError} />,
+      );
+    });
     await vi.waitFor(() => {
       expect(onError).toHaveBeenCalled();
     });

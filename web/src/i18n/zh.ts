@@ -227,6 +227,9 @@ export const zh: Translations = {
     enableVoice: "启用语音输入",
     autoSend: "说完自动发送",
     voiceReply: "语音回复（朗读回复）",
+    replyOn: "随语音输入开启",
+    replyOff: "随语音输入关闭",
+
     sttProvider: "语音识别引擎",
     ttsProvider: "语音合成引擎",
     ttsSpeed: "语速",
@@ -243,6 +246,8 @@ export const zh: Translations = {
     holdToTalk: "按住 说话",
     releaseToSend: "松开 发送",
     releaseToCancel: "松开 取消",
+    slideToCancel: "↑ 上滑取消",
+
   },
 
   analytics: {

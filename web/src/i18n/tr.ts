@@ -214,6 +214,9 @@ export const tr: Translations = {
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
+    replyOn: "Ses girişiyle açık",
+    replyOff: "Ses girişiyle kapalı",
+
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
     ttsSpeed: "Konuşma hızı",
@@ -230,6 +233,8 @@ export const tr: Translations = {
     holdToTalk: "Hold to talk",
     releaseToSend: "Release to send",
     releaseToCancel: "Release to cancel",
+    slideToCancel: "İptal etmek için yukarı kaydır",
+
   },
 
   analytics: {

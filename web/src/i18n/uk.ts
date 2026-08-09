@@ -214,6 +214,9 @@ export const uk: Translations = {
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
+    replyOn: "Увімкнено з голосовим вводом",
+    replyOff: "Вимкнено з голосовим вводом",
+
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
     ttsSpeed: "Швидкість мовлення",
@@ -230,6 +233,8 @@ export const uk: Translations = {
     holdToTalk: "Hold to talk",
     releaseToSend: "Release to send",
     releaseToCancel: "Release to cancel",
+    slideToCancel: "Проведіть вгору, щоб скасувати",
+
   },
 
   analytics: {

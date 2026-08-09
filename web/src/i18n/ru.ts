@@ -214,6 +214,9 @@ export const ru: Translations = {
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
+    replyOn: "Включается с голосовым вводом",
+    replyOff: "Выключается с голосовым вводом",
+
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
     ttsSpeed: "Скорость речи",
@@ -230,6 +233,8 @@ export const ru: Translations = {
     holdToTalk: "Hold to talk",
     releaseToSend: "Release to send",
     releaseToCancel: "Release to cancel",
+    slideToCancel: "Смахните вверх, чтобы отменить",
+
   },
 
   analytics: {

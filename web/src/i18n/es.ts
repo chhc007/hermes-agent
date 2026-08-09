@@ -214,6 +214,9 @@ export const es: Translations = {
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
+    replyOn: "Activada con la entrada de voz",
+    replyOff: "Desactivada con la entrada de voz",
+
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
     ttsSpeed: "Velocidad del habla",
@@ -230,6 +233,8 @@ export const es: Translations = {
     holdToTalk: "Hold to talk",
     releaseToSend: "Release to send",
     releaseToCancel: "Release to cancel",
+    slideToCancel: "Desliza hacia arriba para cancelar",
+
   },
 
   analytics: {

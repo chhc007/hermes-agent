@@ -5,8 +5,11 @@
  *   voice mode (the composer surface swaps to a big hold-to-talk button) or
  *   exits back to text input.
  * - VoiceHoldButton: the big button shown while voice mode is active. Hold
- *   to record; slide UP into the cancel zone (shown as "松开 取消") and
- *   release to DISCARD; release anywhere else to transcribe + send.
+ *   to record; slide UP off the button into the cancel zone (shown as
+ *   "松开 取消") and release to DISCARD; release anywhere else to
+ *   transcribe + send. Uses pointer capture so dragging outside the button
+ *   keeps routing move/up events here (a pointerleave would otherwise end
+ *   the recording the moment the finger leaves the button).
  *
  * Both share the VoiceRecorder (cancel() discards, stop() transcribes).
  */
@@ -71,7 +74,8 @@ export function VoiceModeButton({
 // ── Hold-to-talk button (voice-mode surface) ─────────────────────────
 
 interface VoiceHoldButtonProps extends BaseProps {
-  /** Cancel-zone distance above the button (px). */
+  /** Cancel-zone distance above the button (px). Default tuned so small
+   *  finger movements while holding do NOT accidentally cancel. */
   cancelDistance?: number;
 }
 
@@ -80,7 +84,7 @@ export function VoiceHoldButton({
   sttProvider,
   onTranscript,
   onError,
-  cancelDistance = 72,
+  cancelDistance = 120,
 }: VoiceHoldButtonProps) {
   const { t } = useI18n();
   const [state, setState] = useState<HoldState>("idle");
@@ -114,6 +118,13 @@ export function VoiceHoldButton({
     if (!enabled || stateRef.current !== "idle") return;
     suppressClickRef.current = true;
     startYRef.current = e.clientY;
+    // Capture the pointer so drags that leave the button still route
+    // pointermove/pointerup here (no premature pointerleave end).
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* capture not supported — fall back to in-button tracking */
+    }
     setStateBoth("requesting");
     const recorder = new VoiceRecorder(
       (lvl) => setLevel(lvl),
@@ -155,20 +166,30 @@ export function VoiceHoldButton({
     const cur = stateRef.current;
     if (cur !== "recording" && cur !== "cancelling") return;
     const dy = startYRef.current - e.clientY;
-    if (dy > cancelDistance) {
+    // Cancel zone: dragged far enough up, OR the pointer has moved clearly
+    // above the button's top edge (a concrete "drop target" the user can aim
+    // at while dragging off the button — WeChat-style).
+    let inCancelZone = dy > cancelDistance;
+    if (!inCancelZone) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      // Require the pointer to be well above the button's top edge (not just
+      // 8px past it) so small in-button movements don't accidentally cancel.
+      inCancelZone = e.clientY < rect.top - 24;
+    }
+    if (inCancelZone) {
       if (cur !== "cancelling") setStateBoth("cancelling");
     } else if (cur === "cancelling") {
       setStateBoth("recording");
     }
   };
 
-  const endHold = () => {
+  const endHold = (cancelForced = false) => {
     const was = stateRef.current;
     if (was === "requesting" || was === "transcribing") return;
     const recorder = recorderRef.current;
     recorderRef.current = null;
     if (!recorder) return;
-    if (was === "cancelling") {
+    if (cancelForced || was === "cancelling") {
       recorder.cancel(); // discard — onstop skips transcribe
       setStateBoth("idle");
       setLevel(0);
@@ -193,8 +214,8 @@ export function VoiceHoldButton({
       type="button"
       onPointerDown={beginHold}
       onPointerMove={moveHold}
-      onPointerUp={endHold}
-      onPointerLeave={endHold}
+      onPointerUp={() => endHold()}
+      onPointerCancel={() => endHold(true)}
       disabled={!enabled}
       aria-label={label}
       title={label}
@@ -217,12 +238,27 @@ export function VoiceHoldButton({
       )}
       {label}
       {recording && (
-        <span className="absolute inset-x-2 bottom-1 h-0.5 overflow-hidden rounded-full bg-current/30" aria-hidden>
+        <>
           <span
-            className="block h-full bg-current transition-[width] duration-75"
-            style={{ width: `${Math.min(100, Math.max(8, level * 220))}%` }}
-          />
-        </span>
+            className={cn(
+              "pointer-events-none absolute -top-9 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+              state === "cancelling"
+                ? "bg-red-500 text-white"
+                : "bg-foreground/80 text-background",
+            )}
+            aria-hidden
+          >
+            {state === "cancelling"
+              ? t.voice.releaseToCancel
+              : t.voice.slideToCancel}
+          </span>
+          <span className="absolute inset-x-2 bottom-1 h-0.5 overflow-hidden rounded-full bg-current/30" aria-hidden>
+            <span
+              className="block h-full bg-current transition-[width] duration-75"
+              style={{ width: `${Math.min(100, Math.max(8, level * 220))}%` }}
+            />
+          </span>
+        </>
       )}
     </button>
   );

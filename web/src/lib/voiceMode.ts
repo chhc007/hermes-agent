@@ -84,6 +84,43 @@ export function clampTtsSpeed(value: unknown): number {
 export const VOICE_INPUT_DIRECTIVE =
   "【语音输入】本条消息由语音输入转写，可能存在识别误差，如有不通顺请结合上下文简单纠正。";
 
+/** Brevity directive appended to a HOLD-TO-TALK voice send: the model keeps
+ *  working fully but compresses only the FINAL visible reply (3 sentences,
+ *  conclusion first) because it will be read aloud by TTS. Since v1.7.29
+ *  this is bound to the individual voice message (fromVoice), NOT the voice
+ *  switch — a typed message gets no directive. */
+export const VOICE_BREVITY_DIRECTIVE =
+  "[系统提示] 当前处于语音播报模式。请照常执行任务：该查的资料照查、该调的工具照调、该有的步骤照做，过程与思考不受影响。仅最终回复需要：用简洁口语化的语言，控制在 3 句话以内，先给结论，不附加\"详情见回复\"之类的提示尾巴。";
+
+/** One-shot directive when a NON-voice message follows a voice one: clears
+ *  any lingering brevity bias from the previous turn so the model resumes
+ *  full-length replies. */
+export const VOICE_NORMAL_DIRECTIVE =
+  "[系统提示] 语音回复已关闭，请正常详细回复，无需保持简短。";
+
+/** Build the model-visible suffixes for a send. `lastWasVoice` tracks the
+ *  PREVIOUS send: if this send is NOT voice but the previous one was, append
+ *  the one-shot "resume normal replies" directive so a typed follow-up is
+ *  unaffected by the prior voice turn's brevity bias. */
+export function buildVoiceDirectives(
+  opts: { fromVoice?: boolean },
+  voiceMuted: boolean,
+  lastWasVoice: boolean,
+): {
+  voiceMarker: string;
+  brevityDirective: string;
+  normalDirective: string;
+  lastWasVoiceNext: boolean;
+} {
+  const isVoiceSend = opts.fromVoice === true;
+  const voiceMarker = isVoiceSend ? `\n\n${VOICE_INPUT_DIRECTIVE}` : "";
+  const brevityDirective =
+    isVoiceSend && !voiceMuted ? `\n\n${VOICE_BREVITY_DIRECTIVE}` : "";
+  const normalDirective =
+    !isVoiceSend && lastWasVoice ? `\n\n${VOICE_NORMAL_DIRECTIVE}` : "";
+  return { voiceMarker, brevityDirective, normalDirective, lastWasVoiceNext: isVoiceSend };
+}
+
 /** Split a message text into clean display text + a flag for voice input. */
 export function stripVoiceDirective(text: string | undefined): {
   clean: string;
@@ -112,7 +149,10 @@ export function loadVoiceSettings(): VoiceSettings {
     return {
       enabled: parsed.enabled ?? DEFAULT_VOICE_SETTINGS.enabled,
       sendMode: parsed.sendMode === "confirm" ? "confirm" : "auto",
-      voiceReply: parsed.voiceReply ?? DEFAULT_VOICE_SETTINGS.voiceReply,
+      // Bound to `enabled` (v1.7.28): voice input ON ⇒ voice reply ON. The
+      // field stays in the persisted shape for backward compat, but its value
+      // always follows the master switch.
+      voiceReply: parsed.enabled ?? DEFAULT_VOICE_SETTINGS.enabled,
       sttProvider,
       ttsProvider,
       ttsSpeed: clampTtsSpeed(parsed.ttsSpeed),

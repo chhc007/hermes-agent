@@ -214,6 +214,9 @@ export const hu: Translations = {
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
+    replyOn: "Bekapcsolva hangbemenettel",
+    replyOff: "Kikapcsolva hangbemenettel",
+
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
     ttsSpeed: "Beszédsebesség",
@@ -230,6 +233,8 @@ export const hu: Translations = {
     holdToTalk: "Hold to talk",
     releaseToSend: "Release to send",
     releaseToCancel: "Release to cancel",
+    slideToCancel: "Húzza felfelé a lemondáshoz",
+
   },
 
   analytics: {

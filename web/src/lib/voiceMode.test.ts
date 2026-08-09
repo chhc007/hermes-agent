@@ -11,6 +11,7 @@ import {
   DEFAULT_VOICE_SETTINGS,
   VOICE_INPUT_DIRECTIVE,
   blobToDataUrl,
+  buildVoiceDirectives,
   clampTtsSpeed,
   cleanTextForSpeech,
   loadVoiceSettings,
@@ -69,6 +70,59 @@ describe("voiceMode settings", () => {
       ttsProvider: "edge",
       ttsSpeed: 1,
     });
+  });
+
+  it("binds voiceReply to enabled on load (v1.7.28)", () => {
+    // Legacy stored data with voice input OFF but voice reply ON: the reply
+    // flag must follow the master switch (no independent reply toggle).
+    saveVoiceSettings({
+      enabled: false,
+      sendMode: "auto",
+      voiceReply: true,
+      sttProvider: "local",
+      ttsProvider: "mimo",
+      ttsSpeed: 1,
+    });
+    expect(loadVoiceSettings().voiceReply).toBe(false);
+    saveVoiceSettings({
+      enabled: true,
+      sendMode: "auto",
+      voiceReply: false,
+      sttProvider: "local",
+      ttsProvider: "mimo",
+      ttsSpeed: 1,
+    });
+    expect(loadVoiceSettings().voiceReply).toBe(true);
+  });
+
+  it("builds per-message voice directives (v1.7.29)", () => {
+    // Voice send → marker + brevity directive, no normal directive.
+    const v1 = buildVoiceDirectives({ fromVoice: true }, false, false);
+    expect(v1.voiceMarker).toContain(VOICE_INPUT_DIRECTIVE);
+    expect(v1.brevityDirective).toContain("语音播报模式");
+    expect(v1.normalDirective).toBe("");
+    expect(v1.lastWasVoiceNext).toBe(true);
+
+    // Typed send after a voice one → NO brevity, one-shot resume directive.
+    const v2 = buildVoiceDirectives({}, false, true);
+    expect(v2.voiceMarker).toBe("");
+    expect(v2.brevityDirective).toBe("");
+    expect(v2.normalDirective).toContain("正常详细回复");
+    expect(v2.lastWasVoiceNext).toBe(false);
+
+    // Typed send after a typed one → nothing at all.
+    const v3 = buildVoiceDirectives({}, false, false);
+    expect(v3.voiceMarker).toBe("");
+    expect(v3.brevityDirective).toBe("");
+    expect(v3.normalDirective).toBe("");
+    expect(v3.lastWasVoiceNext).toBe(false);
+
+    // Voice send while muted → marker only, no brevity directive.
+    const v4 = buildVoiceDirectives({ fromVoice: true }, true, false);
+    expect(v4.voiceMarker).toContain(VOICE_INPUT_DIRECTIVE);
+    expect(v4.brevityDirective).toBe("");
+    expect(v4.normalDirective).toBe("");
+    expect(v4.lastWasVoiceNext).toBe(true);
   });
 
   it("clamps ttsSpeed to the supported range", () => {

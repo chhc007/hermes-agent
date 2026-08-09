@@ -195,6 +195,9 @@ export const ar = defineLocale({
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",
+    replyOn: "مفعّلة مع الإدخال الصوتي",
+    replyOff: "معطّلة مع الإدخال الصوتي",
+
     sttProvider: "Recognition engine",
     ttsProvider: "Voice engine",
     ttsSpeed: "سرعة الكلام",
@@ -211,6 +214,8 @@ export const ar = defineLocale({
     holdToTalk: "Hold to talk",
     releaseToSend: "Release to send",
     releaseToCancel: "Release to cancel",
+    slideToCancel: "اسحب لأعلى للإلغاء",
+
   },
 
   analytics: {

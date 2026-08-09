@@ -1,7 +1,7 @@
 /**
  * VoiceReply — speaks assistant replies aloud via the server TTS endpoint.
  *
- * When voiceReply is enabled (and not muted), ChatPage feeds the assistant's
+ * When voice is enabled (and not muted), ChatPage feeds the assistant's
  * final text here; it synthesizes audio via POST /api/audio/speak
  * (server-side TTS provider, e.g. MiMo) and plays it through a hidden
  * <audio> element.
@@ -10,6 +10,10 @@
  * it silences the current playback AND suppresses future live replies until
  * clicked again (recovering from mute). ChatPage owns the `muted` state so
  * its speech-trigger effect can consult it.
+ *
+ * Since v1.7.28, the `enabled` master switch (voice input) also controls
+ * spoken replies — they are bound together; there is no separate reply
+ * toggle.
  */
 
 import { Volume2, VolumeX, Loader2 } from "lucide-react";
@@ -24,7 +28,7 @@ import {
 } from "@/lib/voiceMode";
 
 interface VoiceReplyProps {
-  /** Master switch (voiceSettings.voiceReply). */
+  /** Master switch — voice input enabled (voice reply is bound to it). */
   enabled: boolean;
   /** Muted state owned by ChatPage (floating-button toggle). */
   muted: boolean;
@@ -55,7 +59,10 @@ export function VoiceReply({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playing, setPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
-  const currentRun = useRef(0);
+  // Init to the CURRENT runId so a REMOUNT (e.g. switching voice/typed input
+  // hides then re-shows the indicator) does NOT replay an already-spoken
+  // reply. Only a runId CHANGE after mount triggers synthesis. (v1.7.30)
+  const currentRun = useRef(runId);
 
   const stopPlayback = useCallback(() => {
     audioRef.current?.pause();
