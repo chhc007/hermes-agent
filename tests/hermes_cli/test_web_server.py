@@ -1036,6 +1036,56 @@ class TestWebServerEndpoints:
         assert resp.status_code == 200
         assert resp.json()["session_id"] == "cyc-b"
 
+    def test_latest_descendant_skips_delegate_subagent_child(self):
+        """A delegate/subagent child (_delegate_from) must NOT hijack the
+        resume target: clicking the parent session should keep you on the
+        parent, not jump into the subagent run. Regression for the dashboard
+        'click session A lands on session B' bug where the CTE followed every
+        parent_session_id child, unlike SessionDB.resolve_resume_target."""
+        from hermes_state import SessionDB
+
+        db = SessionDB()
+        try:
+            db.create_session(session_id="par-a", source="cli")
+            db.create_session(
+                session_id="sub-b",
+                source="tui",
+                parent_session_id="par-a",
+                model_config={"_delegate_from": "par-a"},
+            )
+            # A genuine continuation child (no marker) should still be followed.
+            db.create_session(
+                session_id="cont-c",
+                source="tui",
+                parent_session_id="par-a",
+            )
+        finally:
+            db.close()
+
+        # Parent has both a subagent child and a continuation child: the
+        # continuation is the newest followable target.
+        resp = self.client.get("/api/sessions/par-a/latest-descendant")
+        assert resp.status_code == 200
+        assert resp.json()["session_id"] == "cont-c"
+
+        # A parent whose ONLY child is a subagent stays on itself.
+        db = SessionDB()
+        try:
+            db.create_session(session_id="par-d", source="cli")
+            db.create_session(
+                session_id="sub-e",
+                source="tui",
+                parent_session_id="par-d",
+                model_config={"_delegate_from": "par-d"},
+            )
+        finally:
+            db.close()
+
+        resp = self.client.get("/api/sessions/par-d/latest-descendant")
+        assert resp.status_code == 200
+        assert resp.json()["session_id"] == "par-d"
+        assert resp.json()["changed"] is False
+
 
 
 

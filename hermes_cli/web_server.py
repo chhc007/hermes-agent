@@ -11273,6 +11273,14 @@ def _session_latest_descendant(session_id: str, db):
 
     /model may create child sessions. Dashboard refresh should continue the
     newest child instead of reopening the old parent.
+
+    Only genuine continuations are followed. Explicit branches
+    (``_branched_from``), delegate/subagent runs (``_delegate_from``) and
+    tool children also carry a ``parent_session_id`` yet are NOT
+    continuations — following them would hijack the resume target to an
+    unrelated session (e.g. a subagent run). This mirrors the child
+    exclusion in ``SessionDB.resolve_resume_target`` /
+    ``get_compression_tip`` (hermes_state.py).
     """
     def row_get(row, key, index):
         if isinstance(row, dict):
@@ -11284,6 +11292,22 @@ def _session_latest_descendant(session_id: str, db):
                 return row[index]
             except Exception:
                 return None
+
+    def _is_followable_child(row) -> bool:
+        """True only for continuation children — see docstring."""
+        try:
+            mc = row.get("model_config") if isinstance(row, dict) else None
+            if mc:
+                if isinstance(mc, str):
+                    mc = json.loads(mc)
+                if mc.get("_branched_from") or mc.get("_delegate_from"):
+                    return False
+        except Exception:
+            pass
+        src = row.get("source") if isinstance(row, dict) else None
+        if src == "tool":
+            return False
+        return True
 
     sid = db.resolve_session_id(session_id)
     if not sid or not db.get_session(sid):
@@ -11306,6 +11330,9 @@ def _session_latest_descendant(session_id: str, db):
                 SELECT s.id, s.parent_session_id, s.started_at
                 FROM sessions s
                 JOIN descendants d ON s.parent_session_id = d.id
+                WHERE json_extract(COALESCE(s.model_config, '{}'), '$._branched_from') IS NULL
+                  AND json_extract(COALESCE(s.model_config, '{}'), '$._delegate_from') IS NULL
+                  AND COALESCE(s.source, '') != 'tool'
             )
             SELECT id, parent_session_id, started_at FROM descendants
             """,
@@ -11318,7 +11345,12 @@ def _session_latest_descendant(session_id: str, db):
                 "started_at": row_get(row, "started_at", 2),
             })
     else:
-        rows = db.list_sessions_rich(limit=10000, offset=0, compact_rows=True)
+        rows = [
+            r for r in db.list_sessions_rich(
+                limit=10000, offset=0, compact_rows=True,
+            )
+            if _is_followable_child(r)
+        ]
 
     children = {}
     for row in rows:
