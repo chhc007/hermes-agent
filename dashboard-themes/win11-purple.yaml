@@ -1,15 +1,15 @@
 # ~/.hermes/dashboard-themes/win11-purple.yaml
 # Windows 11 Fluent 风格 · 柔和紫 · 护眼
-# v2：整体降低饱和度/对比度，更柔和不刺眼
+# v3：整体再淡一档，色相更贴近亮色聊天区（#f7f5fc），字体略收
 # 深色 Mica 材质 + 柔和紫罗兰强调色，接近 Win11 默认壁纸的紫色调
 name: win11-purple
 label: Win11 Purple
-description: Windows 11 Fluent 风格 — 柔和紫 · 深色 Mica · 护眼大字
+description: Windows 11 Fluent 风格 — 柔和紫 · 深色 Mica · 护眼
 
 # 3 层调色板：柔和深紫灰画布（Mica 深色材质）+ 低亮度淡紫白文字 + 轻光晕
 palette:
   background:
-    hex: "#211c30"        # 柔和深紫灰（比 v1 稍亮稍灰，降低与文字的对比）
+    hex: "#2b2545"        # 柔和深紫灰（v3 提亮，向聊天区亮紫白靠拢，更协调）
     alpha: 1.0
   midground:
     hex: "#d6d0ea"        # 主文字：低亮度淡紫白（对比度约 11:1，舒适而非刺眼）
@@ -17,14 +17,14 @@ palette:
   foreground:
     hex: "#ffffff"
     alpha: 0.0            # 顶层高光默认不可见
-  warmGlow: "rgba(167, 139, 250, 0.16)"   # 淡紫光晕（比 v1 降 40% 浓度）
-  noiseOpacity: 0.25      # 颗粒更淡，画面更干净
+  warmGlow: "rgba(167, 139, 250, 0.12)"   # 淡紫光晕（v3 再降 25% 浓度）
+  noiseOpacity: 0.2       # 颗粒更淡，画面更干净
 
 typography:
   fontSans: '"Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif'
   fontMono: '"Cascadia Code", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace'
   fontDisplay: '"Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif'
-  baseSize: "17px"        # 默认 15px → 放大到 17px，护眼
+  baseSize: "15.5px"      # v3：17px → 15.5px，稍微收一档（默认 15px，仍略大护眼）
   lineHeight: "1.6"
   letterSpacing: "0"
 
@@ -39,14 +39,14 @@ colorOverrides:
   primary: "#8f7fe0"
   primaryForeground: "#ffffff"
   accent: "#a99be8"
-  accentForeground: "#211c30"
+  accentForeground: "#2b2545"
   secondary: "rgba(143, 127, 224, 0.14)"
   secondaryForeground: "#e2dcf2"
   muted: "rgba(255, 255, 255, 0.05)"
   mutedForeground: "#a39bc0"
-  card: "rgba(255, 255, 255, 0.035)"
+  card: "rgba(255, 255, 255, 0.03)"
   cardForeground: "#d6d0ea"
-  popover: "#282238"
+  popover: "#2e2848"
   popoverForeground: "#d6d0ea"
   border: "rgba(255, 255, 255, 0.07)"
   input: "rgba(255, 255, 255, 0.09)"
@@ -59,10 +59,10 @@ colorOverrides:
 # 半透明卡片 + 柔和阴影（v2：阴影更轻、卡片更淡）
 componentStyles:
   card:
-    background: "rgba(255, 255, 255, 0.035)"
-    boxShadow: "0 3px 16px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.05)"
+    background: "rgba(255, 255, 255, 0.03)"
+    boxShadow: "0 3px 16px rgba(0, 0, 0, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.04)"
   header:
-    background: "rgba(33, 28, 48, 0.7)"
+    background: "rgba(43, 37, 69, 0.7)"
     backdropFilter: "blur(18px) saturate(140%)"
     borderBottom: "1px solid rgba(255, 255, 255, 0.06)"
   sidebar:
@@ -71,12 +71,12 @@ componentStyles:
     borderRadius: "0.5rem"
 
 customCSS: |
-  /* Win11 Mica 模拟：淡紫色光晕透出（v2 浓度大幅降低，更柔和） */
+  /* Win11 Mica 模拟：淡紫色光晕透出（v3 浓度再降，更淡更干净） */
   body {
     background:
-      radial-gradient(1100px 700px at 15% -10%, rgba(167, 139, 250, 0.10), transparent 60%),
-      radial-gradient(900px 600px at 105% 15%, rgba(169, 155, 232, 0.08), transparent 55%),
-      radial-gradient(700px 500px at 50% 110%, rgba(143, 127, 224, 0.06), transparent 60%),
+      radial-gradient(1100px 700px at 15% -10%, rgba(167, 139, 250, 0.08), transparent 60%),
+      radial-gradient(900px 600px at 105% 15%, rgba(169, 155, 232, 0.06), transparent 55%),
+      radial-gradient(700px 500px at 50% 110%, rgba(143, 127, 224, 0.05), transparent 60%),
       var(--background) !important;
     background-attachment: fixed !important;
   }

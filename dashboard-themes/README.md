@@ -7,7 +7,7 @@
 
 | 主题 | 风格 | 说明 |
 |------|------|------|
-| [win11-purple.yaml](./win11-purple.yaml) | Windows 11 Fluent · 柔和紫 · 护眼 | 深色 Mica 材质 + 紫罗兰强调色 + 17px 大字体 |
+| [win11-purple.yaml](./win11-purple.yaml) | Windows 11 Fluent · 柔和紫 · 护眼 | 深色 Mica 材质 + 紫罗兰强调色 + 15.5px 字体（v3：更淡更协调） |
 
 ## 安装（以 win11-purple 为例）
 
