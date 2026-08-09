@@ -29,7 +29,6 @@ import { filesFromTransfer, formatFileSize, transferHasFiles } from "@/lib/chatF
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 import { VoiceHoldButton, VoiceModeButton } from "@/components/VoiceButton";
-import { VoiceReply } from "@/components/VoiceReply";
 import { VoiceSettings } from "@/components/VoiceSettings";
 import type { VoiceSettings as VoiceSettingsT } from "@/lib/voiceMode";
 
@@ -64,12 +63,6 @@ interface ChatInputProps {
   /** Called when voice settings change. */
   onVoiceSettingsChange?: (settings: VoiceSettingsT) => void;
   onVoiceError?: (message: string) => void;
-  /** Voice-reply mute state (owned by ChatPage). */
-  voiceMuted?: boolean;
-  onToggleVoiceMuted?: () => void;
-  /** Live-reply speech payload (owned by ChatPage's trigger effect). */
-  voiceReplyText?: string;
-  voiceReplyRun?: number;
 }
 
 export interface ChatInputHandle {
@@ -93,10 +86,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       onVoiceTranscript,
       onVoiceSettingsChange,
       onVoiceError,
-      voiceMuted,
-      onToggleVoiceMuted,
-      voiceReplyText,
-      voiceReplyRun,
     },
     ref,
   ) {
@@ -239,18 +228,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               onToggle={() => setVoiceModeActive(false)}
             />
             <VoiceSettings settings={voiceSettings} onChange={onVoiceSettingsChange} />
-            <div className="ml-auto" />
-            {voiceMuted !== undefined && onToggleVoiceMuted && (
-              <VoiceReply
-                enabled={voiceSettings.voiceReply}
-                muted={voiceMuted}
-                onToggleMuted={onToggleVoiceMuted}
-                ttsProvider={voiceSettings.ttsProvider}
-                text={voiceReplyText ?? ""}
-                runId={voiceReplyRun ?? 0}
-                onError={onVoiceError}
-              />
-            )}
           </div>
         </div>
       );
@@ -380,20 +357,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               onChange={onVoiceSettingsChange}
             />
           )}
-
-          {voiceMuted !== undefined &&
-            onToggleVoiceMuted &&
-            voiceSettings?.voiceReply && (
-              <VoiceReply
-                enabled={voiceSettings.voiceReply}
-                muted={voiceMuted}
-                onToggleMuted={onToggleVoiceMuted}
-                ttsProvider={voiceSettings.ttsProvider}
-                text={voiceReplyText ?? ""}
-                runId={voiceReplyRun ?? 0}
-                onError={onVoiceError}
-              />
-            )}
         </div>
       </div>
     );

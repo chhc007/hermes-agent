@@ -41,6 +41,7 @@ import { useSearchParams } from "react-router";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
 import { ChatInput, type ChatInputHandle } from "@/components/ChatInput";
+import { VoiceReply } from "@/components/VoiceReply";
 import {
   loadVoiceSettings,
   saveVoiceSettings,
@@ -2149,6 +2150,22 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                 />
               )}
               <div className="relative">
+                {/* Single VoiceReply instance, above the composer — NOT
+                    re-mounted when the composer toggles voice/text mode
+                    (a remount would replay the last reply). */}
+                {voiceSettings.voiceReply && (
+                  <div className="mb-1 flex items-center justify-end gap-1 px-0.5">
+                    <VoiceReply
+                      enabled={voiceSettings.voiceReply}
+                      muted={voiceMuted}
+                      onToggleMuted={() => setVoiceMuted((m) => !m)}
+                      ttsProvider={voiceSettings.ttsProvider}
+                      text={voiceReplyText}
+                      runId={voiceReplyRun}
+                      onError={(msg) => setBanner(msg)}
+                    />
+                  </div>
+                )}
                 <SlashPopover
                   ref={slashPopoverRef}
                   input={composerText}
@@ -2165,10 +2182,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                   onVoiceTranscript={handleVoiceTranscript}
                   onVoiceSettingsChange={handleVoiceSettingsChange}
                   onVoiceError={(msg) => setBanner(msg)}
-                  voiceMuted={voiceMuted}
-                  onToggleVoiceMuted={() => setVoiceMuted((m) => !m)}
-                  voiceReplyText={voiceReplyText}
-                  voiceReplyRun={voiceReplyRun}
                 />
               </div>
             </div>

@@ -34,7 +34,7 @@ export type SttProvider = (typeof STT_PROVIDERS)[number]["id"];
 /** TTS provider options for the voice-reply switcher. */
 export const TTS_PROVIDERS = [
   { id: "mimo", label: "MiMo (冰糖)" },
-  { id: "edge", label: "Edge (免费)" },
+  { id: "edge", label: "Edge (中文晓晓)" },
   { id: "openai", label: "OpenAI (需 key)" },
   { id: "elevenlabs", label: "ElevenLabs (需 key)" },
 ] as const;
