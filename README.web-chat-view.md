@@ -632,7 +632,23 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.7**（当前，稳定）：**TUI 功能对齐（高+中价值）** — 气泡视图补齐官方终端
+- **v1.8**（当前，稳定）：**编辑历史用户消息 + 从此处重新生成** — 用户消息
+  气泡悬停显示 ✎ 编辑按钮 → 内联 textarea（预填 `stripVoiceDirective` 后的原文，
+  Enter 保存 / Esc 取消 / 空文本禁用）→ 保存时把会话回退到该消息之前并用编辑后
+  文本重发，从该点重新生成。
+  1) **后端**：`session.undo` RPC 新增可选 `count` 参数，镜像 CLI `undo_last(n)`
+  （从尾部收集最近 N 条真实用户消息——沿用 `role=="user" and not display_kind`
+  判定——取最旧者为截断点删其后全部；缺省 `count` 时行为与原来完全一致）；
+  2) **前端**：`handleEditMessage` 计算目标消息到末尾的真实用户轮数 `turns` →
+  `session.undo { session_id, count: turns }`，成功且 `removed>0` 后本地
+  `trim` reducer 截断到目标消息之前（并清空 clarify/subagents/todos 临时态防
+  stale 卡片残留）→ `sendChatPrompt` 重发编辑文本；会话 running 时 `session.undo`
+  返回 4009 → 显示「会话正忙」banner，安全降级不重发；
+  3) i18n：`chat.editMessage` / `chat.editBusy`（en/zh，其余语言回退英文）。
+  测试 404 passed（新增 13 个）。改动：`tui_gateway/methods_session.py` +
+  `web/src/pages/ChatPage.tsx` + `ChatMessageList.tsx` + `MessageBubble.tsx` +
+  `chat-event-stream.ts`。
+- **v1.7**（稳定）：**TUI 功能对齐（高+中价值）** — 气泡视图补齐官方终端
   的常用能力：
   1) **停止生成**：`session.interrupt` RPC，agent 运行中显示红色 Stop 按钮；
   2) **撤销/重试**：`session.undo` RPC + 重发最后用户消息（↶/↻ 按钮）；

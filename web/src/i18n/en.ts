@@ -221,6 +221,8 @@ export const en: Translations = {
     undo: "Undo last exchange",
     retry: "Retry last message",
     stop: "Stop",
+    editMessage: "Edit message and regenerate from here",
+    editBusy: "Session is busy — stop the current turn before editing.",
   },
 
   voice: {

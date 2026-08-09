@@ -19,9 +19,11 @@ import { MessageBubble } from "./MessageBubble";
 interface ChatMessageListProps {
   messages: ChatMessage[];
   className?: string;
+  /** Optional edit hook forwarded to user message bubbles (edit + regenerate). */
+  onEditMessage?: (message: ChatMessage, newText: string) => void;
 }
 
-export function ChatMessageList({ messages, className }: ChatMessageListProps) {
+export function ChatMessageList({ messages, className, onEditMessage }: ChatMessageListProps) {
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -103,7 +105,7 @@ export function ChatMessageList({ messages, className }: ChatMessageListProps) {
         )}
       >
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble key={message.id} message={message} onEditMessage={onEditMessage} />
         ))}
         {messages.length === 0 && (
           <div className="flex flex-1 items-center justify-center text-sm text-text-tertiary">

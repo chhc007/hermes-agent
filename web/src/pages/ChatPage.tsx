@@ -57,7 +57,11 @@ import { ModelPickerDialog } from "@/components/ModelPickerDialog";
 import { ClarifyCard } from "@/components/ClarifyCard";
 import { SlashPopover, type SlashPopoverHandle } from "@/components/SlashPopover";
 import { GatewayClient } from "@/lib/gatewayClient";
-import { sessionMessagesToChatMessages, useChatEventStream } from "@/lib/chat-event-stream";
+import {
+  sessionMessagesToChatMessages,
+  useChatEventStream,
+  type ChatMessage,
+} from "@/lib/chat-event-stream";
 import { isTerminalOnlyCommand } from "@/lib/terminal-commands";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
@@ -436,6 +440,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const respondClarifyRef = useRef(chatStream.respondClarify);
   const setCompactingRef = useRef(chatStream.setCompacting);
   const refreshUsageRef = useRef(chatStream.refreshUsage);
+  const trimMessagesBeforeRef = useRef(chatStream.trimMessagesBefore);
   // Live access to the latest stream state (sid, meta, messages) for RPC
   // helpers without subscribing this component to every state change.
   const chatStreamRef = useRef(chatStream);
@@ -448,8 +453,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     resetChatRef.current = chatStream.resetChat;
     setCompactingRef.current = chatStream.setCompacting;
     refreshUsageRef.current = chatStream.refreshUsage;
+    trimMessagesBeforeRef.current = chatStream.trimMessagesBefore;
     chatStreamRef.current = chatStream;
-  }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify, chatStream.resetChat, chatStream.setCompacting, chatStream.refreshUsage]);
+  }, [chatStream.sendUserMessage, chatStream.loadHistory, chatStream.respondClarify, chatStream.resetChat, chatStream.setCompacting, chatStream.refreshUsage, chatStream.trimMessagesBefore]);
 
   // Slash-command completion: the composer text flows up to the popover via
   // onInputChange, and keys are forwarded through onCompletionKey. The
@@ -998,6 +1004,48 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       sendChatPromptRef.current(lastUser.text);
     }
   }, [undoLast]);
+
+  // Edit a historical user message and regenerate from that point: rewind the
+  // session to just before the target (session.undo with count = the number of
+  // real user turns from the target to the end — mirrors CLI undo_last(n)),
+  // then resend the edited text as a fresh typed message. The local bubble list
+  // is trimmed to before the target so the UI matches the gateway's truncated
+  // in-memory history (the /api/events feed carries no user-input frames).
+  const handleEditMessage = useCallback(
+    async (message: ChatMessage, newText: string) => {
+      const trimmed = (newText ?? "").trim();
+      if (!trimmed) return;
+      const sid =
+        chatStreamRef.current?.lastEventSessionId ??
+        chatStreamRef.current?.activeSessionId ??
+        resumeParam;
+      if (!sid) return;
+      const msgs = [...(chatStreamRef.current?.messages ?? [])];
+      const targetIdx = msgs.findIndex((m) => m.id === message.id);
+      if (targetIdx < 0) return;
+      // Real user turns to rewind = user messages from the target (inclusive)
+      // to the end. Undo_last(N) truncates at the Nth-from-last user message,
+      // which removes the target and everything after it.
+      const turns = msgs.slice(targetIdx).filter((m) => m.role === "user").length;
+      if (turns < 1) return;
+      let removed = 0;
+      try {
+        const res = await completionGw.request<{ removed?: number }>("session.undo", {
+          session_id: sid,
+          count: turns,
+        });
+        removed = res?.removed ?? 0;
+      } catch {
+        // session.undo rejects with 4009 while a turn is running.
+        setBanner(t.chat.editBusy ?? "Session is busy — stop the current turn before editing.");
+        return;
+      }
+      if (removed <= 0) return;
+      trimMessagesBeforeRef.current(message.id);
+      sendChatPromptRef.current(trimmed);
+    },
+    [completionGw, resumeParam, t],
+  );
 
   useEffect(() => {
     // Don't spawn the chat PTY (and the TUI/agent bootstrap it triggers)
@@ -2158,7 +2206,11 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                 </div>
               )}
               <TodoPanel todos={chatStream.todos} />
-              <ChatMessageList messages={chatStream.messages} className="rounded-md" />
+              <ChatMessageList
+                messages={chatStream.messages}
+                onEditMessage={handleEditMessage}
+                className="rounded-md"
+              />
               {chatStream.clarify && (
                 <ClarifyCard
                   clarify={chatStream.clarify}

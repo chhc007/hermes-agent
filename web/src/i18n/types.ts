@@ -235,6 +235,10 @@ export interface Translations {
     undo: string;
     retry: string;
     stop: string;
+    /** Edit a historical user message and regenerate from that point.
+     *  Optional — non-English locales fall back to the English literal. */
+    editMessage?: string;
+    editBusy?: string;
   };
 
   // ── Voice mode (web voice input) ──

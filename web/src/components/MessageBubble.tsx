@@ -12,7 +12,7 @@
  * `message.thinking` / `message.tools`.
  */
 
-import { ChevronRight, Mic, Sparkles } from "lucide-react";
+import { ChevronRight, Mic, Pencil, Sparkles } from "lucide-react";
 import { memo, useState } from "react";
 import { useI18n } from "@/i18n";
 
@@ -32,8 +32,12 @@ import { formatTimestamp } from "@/lib/utils";
 
 export const MessageBubble = memo(function MessageBubble({
   message,
+  onEditMessage,
 }: {
   message: ChatMessage;
+  /** Optional edit hook for user bubbles: rewinds the session to before this
+   *  message and resends `newText`. When omitted, no edit affordance shows. */
+  onEditMessage?: (message: ChatMessage, newText: string) => void;
 }) {
   if (message.role === "system") {
     return (
@@ -49,34 +53,127 @@ export const MessageBubble = memo(function MessageBubble({
   }
 
   if (message.role === "user") {
-    // Voice-transcribed messages carry an inline marker (model sees it so it
-    // knows the text may contain recognition errors). Strip it for display
-    // and show a mic badge in the meta row instead.
-    const { clean, isVoice } = stripVoiceDirective(message.text);
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-lg rounded-br-sm bg-primary/10 px-3 py-2 text-sm leading-relaxed text-foreground">
-          {clean}
-          <div className="mt-1 flex items-center justify-end gap-1 text-[0.625rem] leading-none text-text-tertiary/80">
-            {isVoice && (
-              <span
-                className="flex items-center gap-0.5 text-primary/70"
-                title="语音输入"
-                data-slot="voice-input-badge"
-              >
-                <Mic className="size-3" />
-                语音
-              </span>
-            )}
-            {formatTimestamp(message.ts)}
-          </div>
-        </div>
-      </div>
-    );
+    return <UserBubble message={message} onEditMessage={onEditMessage} />;
   }
 
   return <AssistantBubble message={message} />;
 });
+
+/**
+ * Right-aligned user bubble. Real typed input is editable: an ✎ affordance
+ * (revealed on hover / focus) enters an inline textarea pre-filled with the
+ * original text (voice/attachment markers stripped via stripVoiceDirective).
+ * Save (Enter or the button) or Esc cancel; saving invokes onEditMessage.
+ */
+function UserBubble({
+  message,
+  onEditMessage,
+}: {
+  message: ChatMessage;
+  onEditMessage?: (message: ChatMessage, newText: string) => void;
+}) {
+  const { t } = useI18n();
+  // Voice-transcribed messages carry an inline marker (model sees it so it
+  // knows the text may contain recognition errors). Strip it for display
+  // and show a mic badge in the meta row instead.
+  const { clean, isVoice } = stripVoiceDirective(message.text);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(clean);
+  const editable = Boolean(onEditMessage);
+
+  const startEdit = () => {
+    setDraft(clean);
+    setEditing(true);
+  };
+  const cancelEdit = () => setEditing(false);
+  const saveEdit = () => {
+    const next = draft.trim();
+    setEditing(false);
+    if (next && next !== clean) {
+      onEditMessage?.(message, next);
+    }
+  };
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      saveEdit();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      cancelEdit();
+    }
+  };
+
+  const editBtn = editable ? (
+    <button
+      type="button"
+      onClick={startEdit}
+      title={t.chat.editMessage ?? "Edit message"}
+      aria-label={t.chat.editMessage ?? "Edit message"}
+      data-slot="message-edit-btn"
+      className="rounded p-0.5 text-text-tertiary/70 opacity-0 transition-opacity hover:text-primary group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Pencil className="size-3" />
+    </button>
+  ) : null;
+
+  return (
+    <div className="group flex justify-end">
+      <div
+        className="max-w-[80%] whitespace-pre-wrap break-words rounded-lg rounded-br-sm bg-primary/10 px-3 py-2 text-sm leading-relaxed text-foreground"
+        data-slot="user-bubble"
+      >
+        {editing ? (
+          <>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={handleKeyDown}
+              autoFocus
+              rows={Math.min(10, Math.max(2, draft.split("\n").length + 1))}
+              data-slot="message-edit-input"
+              className="w-full resize-y rounded-md border border-border/70 bg-secondary/40 px-2 py-1 text-sm text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <div className="mt-1.5 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={cancelEdit}
+                className="rounded border border-border/60 bg-secondary/30 px-2 py-0.5 text-[10px] text-text-secondary transition-colors hover:bg-secondary/50"
+              >
+                {t.common.cancel ?? "Cancel"}
+              </button>
+              <button
+                type="button"
+                onClick={saveEdit}
+                disabled={!draft.trim()}
+                className="rounded border border-primary/40 bg-primary/15 px-2 py-0.5 text-[10px] text-primary transition-colors hover:bg-primary/25 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {t.common.save ?? "Save"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            {clean}
+            <div className="mt-1 flex items-center justify-end gap-1 text-[0.625rem] leading-none text-text-tertiary/80">
+              {editBtn}
+              {isVoice && (
+                <span
+                  className="flex items-center gap-0.5 text-primary/70"
+                  title="语音输入"
+                  data-slot="voice-input-badge"
+                >
+                  <Mic className="size-3" />
+                  语音
+                </span>
+              )}
+              {formatTimestamp(message.ts)}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** Convert a ToolSegment into the ToolCallInfo shape ToolCallBlock expects.
  *  Shared so the streaming (segments) and legacy-history paths render one

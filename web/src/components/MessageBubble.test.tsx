@@ -145,6 +145,112 @@ describe("MessageBubble", () => {
   });
 });
 
+describe("MessageBubble editing (user messages)", () => {
+  const userMsg: ChatMessage = {
+    id: "u1",
+    role: "user",
+    text: "original question",
+    status: "complete",
+    ts: 1,
+  };
+
+  function editBtn(): HTMLButtonElement {
+    const btn = container.querySelector('[data-slot="message-edit-btn"]') as HTMLButtonElement;
+    if (!btn) throw new Error("edit button not found");
+    return btn;
+  }
+  function editInput(): HTMLTextAreaElement {
+    const ta = container.querySelector('[data-slot="message-edit-input"]') as HTMLTextAreaElement;
+    if (!ta) throw new Error("edit input not found");
+    return ta;
+  }
+  function saveBtn(): HTMLButtonElement {
+    const btn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.textContent?.trim() === "Save",
+    ) as HTMLButtonElement;
+    if (!btn) throw new Error("save button not found");
+    return btn;
+  }
+  function setInput(ta: HTMLTextAreaElement, value: string) {
+    // Use the native value setter so React's value tracker sees the change and
+    // fires onChange (a plain `ta.value =` + input event is swallowed by React).
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!;
+    act(() => {
+      setter.call(ta, value);
+      ta.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  }
+
+  it("shows an edit button only when onEditMessage is provided", async () => {
+    await render(<MessageBubble message={userMsg} />);
+    expect(container.querySelector('[data-slot="message-edit-btn"]')).toBeNull();
+
+    await act(async () =>
+      root.render(<MessageBubble message={userMsg} onEditMessage={vi.fn()} />),
+    );
+    expect(editBtn()).toBeTruthy();
+  });
+
+  it("enters edit mode with a prefilled textarea and saves the new text on Save", async () => {
+    const onEdit = vi.fn();
+    await render(<MessageBubble message={userMsg} onEditMessage={onEdit} />);
+    act(() => editBtn().click());
+
+    const ta = editInput();
+    expect(ta.value).toBe("original question");
+
+    setInput(ta, "edited question");
+    act(() => saveBtn().click());
+
+    expect(onEdit).toHaveBeenCalledWith(userMsg, "edited question");
+    // Edit mode closed.
+    expect(container.querySelector('[data-slot="message-edit-input"]')).toBeNull();
+  });
+
+  it("saves on Enter and cancels on Escape without firing onEdit", async () => {
+    const onEdit = vi.fn();
+    await render(<MessageBubble message={userMsg} onEditMessage={onEdit} />);
+    act(() => editBtn().click());
+    setInput(editInput(), "via enter");
+    act(() =>
+      editInput().dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(onEdit).toHaveBeenCalledWith(userMsg, "via enter");
+
+    // Re-open and cancel via Escape.
+    act(() => editBtn().click());
+    act(() =>
+      editInput().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+    );
+    expect(container.querySelector('[data-slot="message-edit-input"]')).toBeNull();
+    expect(onEdit).toHaveBeenCalledTimes(1);
+  });
+
+  it("prefills the edit textarea with the voice directive stripped", async () => {
+    const onEdit = vi.fn();
+    const voiceMsg: ChatMessage = {
+      ...userMsg,
+      text: `今天天气怎么样？\n\n${VOICE_INPUT_DIRECTIVE}`,
+    };
+    await render(<MessageBubble message={voiceMsg} onEditMessage={onEdit} />);
+    act(() => editBtn().click());
+    expect(editInput().value).toBe("今天天气怎么样？");
+  });
+
+  it("keeps the mic badge visible on editable user bubbles", async () => {
+    const voiceMsg: ChatMessage = {
+      ...userMsg,
+      text: `语音问题\n\n${VOICE_INPUT_DIRECTIVE}`,
+    };
+    await render(<MessageBubble message={voiceMsg} onEditMessage={vi.fn()} />);
+    expect(container.querySelector('[data-slot="voice-input-badge"]')).toBeTruthy();
+    expect(editBtn()).toBeTruthy();
+  });
+});
+
 describe("MessageBubble segments ordering", () => {
   it("renders thinking → tool → text in arrival order", async () => {
     const msg: ChatMessage = {

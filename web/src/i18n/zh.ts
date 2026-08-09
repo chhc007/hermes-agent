@@ -215,6 +215,8 @@ export const zh: Translations = {
     undo: "撤销上一轮",
     retry: "重试上一条消息",
     stop: "停止",
+    editMessage: "编辑该消息并从此处重新生成",
+    editBusy: "会话正忙 — 请先停止当前回合再编辑。",
   },
 
   voice: {

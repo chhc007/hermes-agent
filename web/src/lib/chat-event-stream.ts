@@ -179,6 +179,7 @@ export type ChatEventStreamAction =
   | { type: "user_message"; text: string }
   | { type: "system_message"; text: string }
   | { type: "history"; messages: ChatMessage[] }
+  | { type: "trim"; messageId: string }
   | { type: "clarify_answered" }
   | { type: "compacting"; compacting: boolean }
   | { type: "usage"; usage: ChatUsage | null };
@@ -397,6 +398,23 @@ export function chatEventStreamReducer(
   // the fetch don't get clobbered by a later resolve.
   if (action.type === "history") {
     return { ...state, messages: action.messages };
+  }
+
+  // Drop a message and everything after it from the local bubble list. Used
+  // after a `session.undo` RPC rewind to the target message so the UI matches
+  // the gateway's truncated in-memory history before the edited text is resent.
+  if (action.type === "trim") {
+    const idx = state.messages.findIndex((m) => m.id === action.messageId);
+    if (idx < 0) return state;
+    return {
+      ...state,
+      messages: state.messages.slice(0, idx),
+      // A rewind may remove an in-flight turn — clear its transient state so a
+      // stale card (clarify / subagents / todos) doesn't linger after the edit.
+      clarify: null,
+      subagents: [],
+      todos: [],
+    };
   }
 
   // Clear the pending clarify card once an answer has been submitted.
@@ -1020,6 +1038,13 @@ export function useChatEventStream(channel: string) {
     dispatch({ type: "history", messages });
   }, []);
 
+  // Drop a message and everything after it from the local bubble list (used
+  // after a `session.undo` rewind before resending edited text). Stable
+  // identity so ChatPage can hold it in a ref without re-rendering.
+  const trimMessagesBefore = useCallback((messageId: string) => {
+    dispatch({ type: "trim", messageId });
+  }, []);
+
   // Submit a clarify answer over the JSON-RPC sidecar (/api/ws). The
   // gateway's clarify.respond only needs request_id + answer. On success
   // (or an expired-but-acknowledged reply) clear the pending card.
@@ -1171,6 +1196,7 @@ export function useChatEventStream(channel: string) {
     sendUserMessage,
     addSystemMessage,
     loadHistory,
+    trimMessagesBefore,
     respondClarify,
     resetChat,
     setCompacting,

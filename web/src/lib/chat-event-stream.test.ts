@@ -422,6 +422,42 @@ describe("system_message (local hint bubble)", () => {
   });
 });
 
+describe("trim (edit-and-regenerate rewind)", () => {
+  it("drops the target message and everything after it, keeping earlier messages", () => {
+    const before = init([
+      { id: "m1", role: "user", text: "hi", status: "complete", ts: 1 },
+      { id: "m2", role: "assistant", text: "hello", status: "complete", ts: 2 },
+      { id: "m3", role: "user", text: "edit me", status: "complete", ts: 3 },
+      { id: "m4", role: "assistant", text: "reply", status: "complete", ts: 4 },
+    ]);
+    const after = chatEventStreamReducer(before, { type: "trim", messageId: "m3" });
+    expect(after.messages.map((m) => m.id)).toEqual(["m1", "m2"]);
+  });
+
+  it("is a no-op (same reference) when the target message is not found", () => {
+    const before = init([{ id: "m1", role: "user", text: "hi", status: "complete", ts: 1 }]);
+    const after = chatEventStreamReducer(before, { type: "trim", messageId: "nope" });
+    expect(after).toBe(before);
+  });
+
+  it("clears transient clarify/subagents/todos after a rewind", () => {
+    const before = {
+      ...init([
+        { id: "m1", role: "user", text: "hi", status: "complete", ts: 1 },
+        { id: "m2", role: "user", text: "edit me", status: "complete", ts: 2 },
+      ]),
+      clarify: { requestId: "r1", question: "q", choices: null, multiSelect: false },
+      subagents: [{ id: "s1", name: "x", status: "complete" as const }],
+      todos: [{ content: "todo", status: "pending" as const }],
+    };
+    const after = chatEventStreamReducer(before, { type: "trim", messageId: "m2" });
+    expect(after.messages.map((m) => m.id)).toEqual(["m1"]);
+    expect(after.clarify).toBeNull();
+    expect(after.subagents).toEqual([]);
+    expect(after.todos).toEqual([]);
+  });
+});
+
 describe("message.complete replaces (no duplication)", () => {
   it("does not duplicate streamed deltas when complete carries the full text", () => {
     // Official semantics: message.complete.text is the FULL final response.
