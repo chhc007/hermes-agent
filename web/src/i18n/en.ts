@@ -237,6 +237,7 @@ export const en: Translations = {
     noSpeech: "No speech detected, try again",
     settings: "Voice settings",
     settingsTitle: "Voice Mode Settings",
+    settingsClose: "Close voice settings",
     enableVoice: "Enable voice input",
     autoSend: "Auto-send when done",
     voiceReply: "Voice reply (read responses aloud)",

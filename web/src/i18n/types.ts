@@ -255,6 +255,8 @@ export interface Translations {
     noSpeech: string;
     settings: string;
     settingsTitle: string;
+    /** Close button of the voice settings modal. Optional — English fallback. */
+    settingsClose?: string;
     enableVoice: string;
     autoSend: string;
     voiceReply: string;

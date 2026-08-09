@@ -231,6 +231,7 @@ export const zh: Translations = {
     noSpeech: "未检测到语音，请重试",
     settings: "语音设置",
     settingsTitle: "语音模式设置",
+    settingsClose: "关闭语音设置",
     enableVoice: "启用语音输入",
     autoSend: "说完自动发送",
     voiceReply: "语音回复（朗读回复）",

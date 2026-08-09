@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 /**
- * VoiceSettings popover tests: toggling master switch, send mode, providers.
+ * VoiceSettings modal tests: toggling master switch, send mode, providers,
+ * and modal close behaviors (backdrop click / close button).
  * (Voice reply is bound to the master switch since v1.7.28 — no own toggle.)
  */
 
@@ -14,6 +15,7 @@ vi.mock("@/i18n", () => ({
       voice: {
         settings: "Voice settings",
         settingsTitle: "Voice Mode Settings",
+        settingsClose: "Close voice settings",
         enableVoice: "Enable voice input",
         autoSend: "Auto-send",
         voiceReply: "Voice reply",
@@ -50,7 +52,7 @@ function checkboxes(): HTMLInputElement[] {
 }
 
 describe("VoiceSettings", () => {
-  it("toggles the panel open/closed", async () => {
+  it("toggles the modal open/closed", async () => {
     await render(
       <VoiceSettings
         settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo", ttsSpeed: 1 }}
@@ -62,6 +64,53 @@ describe("VoiceSettings", () => {
       settingsButton().click();
     });
     expect(container.querySelector('[data-slot="voice-settings-panel"]')).toBeTruthy();
+    expect(container.querySelector('[data-slot="voice-settings-backdrop"]')).toBeTruthy();
+  });
+
+  it("closes when the backdrop (scrim) is clicked", async () => {
+    await render(
+      <VoiceSettings
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo", ttsSpeed: 1 }}
+        onChange={vi.fn()}
+      />,
+    );
+    await act(async () => {
+      settingsButton().click();
+    });
+    expect(container.querySelector('[data-slot="voice-settings-panel"]')).toBeTruthy();
+    await act(async () => {
+      container
+        .querySelector('[data-slot="voice-settings-backdrop"]')
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-slot="voice-settings-panel"]')).toBeNull();
+  });
+
+  it("closes via the close button and keeps panel clicks from closing", async () => {
+    await render(
+      <VoiceSettings
+        settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo", ttsSpeed: 1 }}
+        onChange={vi.fn()}
+      />,
+    );
+    await act(async () => {
+      settingsButton().click();
+    });
+    // Clicking INSIDE the panel must not close it.
+    const panel = container.querySelector('[data-slot="voice-settings-panel"]') as HTMLElement;
+    await act(async () => {
+      panel.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-slot="voice-settings-panel"]')).toBeTruthy();
+    // The explicit close button does.
+    const closeBtn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.getAttribute("aria-label") === "Close voice settings",
+    );
+    expect(closeBtn).toBeTruthy();
+    await act(async () => {
+      closeBtn!.click();
+    });
+    expect(container.querySelector('[data-slot="voice-settings-panel"]')).toBeNull();
   });
 
   it("reflects settings state in the checkboxes", async () => {
@@ -130,35 +179,5 @@ describe("VoiceSettings", () => {
       ttsProvider: "mimo",
       ttsSpeed: 1,
     });
-  });
-
-  it("clamps the panel inside the viewport on both edges (v1.7.32)", async () => {
-    // Button hugging the LEFT edge → panel must not run off the viewport.
-    const originalGBCR = Element.prototype.getBoundingClientRect;
-    Element.prototype.getBoundingClientRect = vi.fn(function (this: Element) {
-      if (this === container.querySelector(".relative")) {
-        return { left: 4, right: 36, top: 100, bottom: 136, width: 32, height: 36, x: 4, y: 100, toJSON: () => ({}) } as DOMRect;
-      }
-      return originalGBCR.call(this);
-    });
-    try {
-      await render(
-        <VoiceSettings
-          settings={{ enabled: true, sendMode: "auto", voiceReply: false, sttProvider: "local", ttsProvider: "mimo", ttsSpeed: 1 }}
-          onChange={vi.fn()}
-        />,
-      );
-      await act(async () => {
-        settingsButton().click();
-      });
-      const panel = container.querySelector('[data-slot="voice-settings-panel"]') as HTMLElement;
-      expect(panel).toBeTruthy();
-      // Button at viewport left=4,right=36: viewport-left candidate = 36-256
-      // = -220 → flip to expand rightward → viewport left clamped to 8, i.e.
-      // offset 8-4=4px from the button container. Panel stays inside viewport.
-      expect(panel.style.left).toBe("4px");
-    } finally {
-      Element.prototype.getBoundingClientRect = originalGBCR;
-    }
   });
 });
