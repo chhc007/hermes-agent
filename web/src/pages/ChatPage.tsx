@@ -462,6 +462,10 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // (streaming → complete transition) can trigger speech.
   const voiceReplyRef = useRef(voiceSettings.voiceReply);
   const voiceMutedRef = useRef(voiceMuted);
+  // Tracks whether voice reply was previously ON, so toggling it OFF injects
+  // a one-shot directive telling the model to stop being brief (a prior
+  // "语音播报模式" directive would otherwise keep biasing short answers).
+  const voiceReplyWasOnRef = useRef(voiceSettings.voiceReply);
   const lastStreamingMsgIdRef = useRef<string | null>(null);
   const lastSpokenMsgRef = useRef<string | null>(null);
   useEffect(() => {
@@ -879,10 +883,19 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       // speech recognition and may contain recognition errors. The user's
       // bubble strips it (MessageBubble shows a mic badge instead).
       const voiceMarker = opts?.fromVoice ? `\n\n${VOICE_INPUT_DIRECTIVE}` : "";
-      const sentText =
+      const brevityDirective =
         voiceSettings.voiceReply && !voiceMuted
-          ? `${fullText}${voiceMarker}\n\n[系统提示] 当前处于语音播报模式。请照常执行任务：该查的资料照查、该调的工具照调、该有的步骤照做，过程与思考不受影响。仅最终回复需要：用简洁口语化的语言，控制在 3 句话以内，先给结论。详细内容请用"详情见回复"等简短提示代替，因为整段回复会被语音朗读。`
-          : `${fullText}${voiceMarker}`;
+          ? `\n\n[系统提示] 当前处于语音播报模式。请照常执行任务：该查的资料照查、该调的工具照调、该有的步骤照做，过程与思考不受影响。仅最终回复需要：用简洁口语化的语言，控制在 3 句话以内，先给结论。详细内容请用"详情见回复"等简短提示代替，因为整段回复会被语音朗读。`
+          : "";
+      // One-shot: when the user turns voice reply OFF, tell the model to
+      // resume normal-length replies (a previous brevity directive may still
+      // be biasing it toward terse answers).
+      const normalDirective =
+        !voiceSettings.voiceReply && voiceReplyWasOnRef.current
+          ? `\n\n[系统提示] 语音回复已关闭，请正常详细回复，无需保持简短。`
+          : "";
+      voiceReplyWasOnRef.current = voiceSettings.voiceReply;
+      const sentText = `${fullText}${voiceMarker}${brevityDirective}${normalDirective}`;
       // Re-check the socket after the (async) upload — it may have dropped
       // or reconnected while we were waiting.
       const live = wsRef.current;
