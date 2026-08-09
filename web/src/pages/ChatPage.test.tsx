@@ -68,6 +68,14 @@ const maybeReloadForLoopbackWsAuthFailure = vi.fn(() => false);
 
 const mockAddSystemMessage = vi.fn();
 const mockSendUserMessage = vi.fn();
+// Mutable state injected into the mocked useChatEventStream so tests can
+// drive undo/retry/stop behavior (messages present, running flag, session id).
+let mockMessages: unknown[] = [];
+let mockRunning = false;
+let mockLastEventSessionId: string | null = null;
+const mockTrimMessagesBefore = vi.fn();
+// Gateway RPC stub — tests set this to resolve/reject per-request.
+let mockGatewayRequest: () => Promise<unknown> = async () => null;
 
 vi.mock("@xterm/addon-fit", () => ({ FitAddon: FakeFitAddon }));
 vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: class {} }));
@@ -83,15 +91,15 @@ vi.mock("@/components/ChatSessionList", () => ({
 vi.mock("@/lib/chat-event-stream", () => ({
   sessionMessagesToChatMessages: (msgs: unknown[]) => msgs as never,
   useChatEventStream: () => ({
-    messages: [],
+    messages: mockMessages,
     connectionState: "connecting",
     error: null,
     sessionTitle: null,
     clarify: null,
     usage: null,
     compacting: false,
-    lastEventSessionId: null,
-    meta: { running: false },
+    lastEventSessionId: mockLastEventSessionId,
+    meta: { running: mockRunning },
     subagents: [],
     todos: [],
     sessionStartedAt: null,
@@ -102,6 +110,7 @@ vi.mock("@/lib/chat-event-stream", () => ({
     resetChat: vi.fn(),
     setCompacting: vi.fn(),
     refreshUsage: vi.fn(async () => {}),
+    trimMessagesBefore: mockTrimMessagesBefore,
   }),
 }));
 vi.mock("@/components/Backdrop", () => ({ Backdrop: () => null }));
@@ -166,17 +175,18 @@ vi.mock("@/i18n", () => ({
 vi.mock("@/lib/dashboard-auth-reload", () => ({
   maybeReloadForLoopbackWsAuthFailure,
 }));
-vi.mock("@/lib/gatewayClient", () => ({
-  GatewayClient: class {
+vi.mock("@/lib/gatewayClient", () => {
+  class FakeGatewayClient {
     connect() {
       return Promise.resolve();
     }
     close() {}
     request() {
-      return Promise.resolve(null);
+      return mockGatewayRequest();
     }
-  },
-}));
+  }
+  return { GatewayClient: FakeGatewayClient };
+});
 
 class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
@@ -239,6 +249,11 @@ beforeEach(() => {
   maybeReloadForLoopbackWsAuthFailure.mockClear();
   mockAddSystemMessage.mockClear();
   mockSendUserMessage.mockClear();
+  mockTrimMessagesBefore.mockClear();
+  mockMessages = [];
+  mockRunning = false;
+  mockLastEventSessionId = null;
+  mockGatewayRequest = async () => null;
   vi.stubGlobal("WebSocket", FakeWebSocket);
   vi.stubGlobal(
     "ResizeObserver",
@@ -369,5 +384,106 @@ describe("ChatPage", () => {
 
     expect(mockSendUserMessage).toHaveBeenCalledWith("hello hermes");
     expect(mockAddSystemMessage).not.toHaveBeenCalled();
+  });
+
+  it("disables undo/retry while a turn is running and shows a busy banner on click", async () => {
+    mockRunning = true;
+    mockMessages = [
+      { id: "u1", role: "user", text: "hi", status: "complete", ts: 1 },
+      { id: "a1", role: "assistant", text: "yo", status: "complete", ts: 2 },
+    ];
+    mockLastEventSessionId = "sess-1";
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    await act(async () => FakeWebSocket.instances[0].onopen?.());
+
+    const buttons = Array.from(
+      container.querySelectorAll("button[title]"),
+    ) as HTMLButtonElement[];
+    const undoBtn = buttons.find((b) => b.title.includes("Undo"));
+    const retryBtn = buttons.find((b) => b.title.includes("Retry"));
+    expect(undoBtn).toBeTruthy();
+    expect(retryBtn).toBeTruthy();
+    // Running → both disabled (the backend would 4009 anyway).
+    expect(undoBtn!.disabled).toBe(true);
+    expect(retryBtn!.disabled).toBe(true);
+  });
+
+  it("trims the last user bubble locally after a successful undo", async () => {
+    mockMessages = [
+      { id: "u1", role: "user", text: "first", status: "complete", ts: 1 },
+      { id: "a1", role: "assistant", text: "reply", status: "complete", ts: 2 },
+      { id: "u2", role: "user", text: "second", status: "complete", ts: 3 },
+      { id: "a2", role: "assistant", text: "reply2", status: "complete", ts: 4 },
+    ];
+    mockLastEventSessionId = "sess-1";
+    mockGatewayRequest = async () => ({ removed: 2 });
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    await act(async () => FakeWebSocket.instances[0].onopen?.());
+
+    const buttons = Array.from(
+      container.querySelectorAll("button[title]"),
+    ) as HTMLButtonElement[];
+    const undoBtn = buttons.find((b) => b.title.includes("Undo"));
+    expect(undoBtn).toBeTruthy();
+
+    await act(async () => {
+      undoBtn!.click();
+    });
+
+    // The local bubble list must be trimmed to before the last user message
+    // (u2) — same contract as handleEditMessage; the events feed never sends
+    // a user-frame for the rewind.
+    expect(mockTrimMessagesBefore).toHaveBeenCalledWith("u2");
+  });
+
+  it("does not trim when undo fails (gateway error)", async () => {
+    mockMessages = [
+      { id: "u1", role: "user", text: "hi", status: "complete", ts: 1 },
+      { id: "a1", role: "assistant", text: "yo", status: "complete", ts: 2 },
+    ];
+    mockLastEventSessionId = "sess-1";
+    mockGatewayRequest = async () => {
+      throw new Error("session.undo: session busy (4009)");
+    };
+    const { default: ChatPage } = await import("./ChatPage");
+
+    await render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <ChatPage isActive />
+      </MemoryRouter>,
+    );
+
+    await vi.waitFor(() => expect(FakeWebSocket.instances).toHaveLength(1));
+    await act(async () => FakeWebSocket.instances[0].onopen?.());
+
+    const buttons = Array.from(
+      container.querySelectorAll("button[title]"),
+    ) as HTMLButtonElement[];
+    const undoBtn = buttons.find((b) => b.title.includes("Undo"));
+    expect(undoBtn).toBeTruthy();
+
+    await act(async () => {
+      undoBtn!.click();
+    });
+
+    expect(mockTrimMessagesBefore).not.toHaveBeenCalled();
+    // A banner should surface the failure instead of a silent no-op.
+    expect(container.textContent).toContain("Undo failed");
   });
 });

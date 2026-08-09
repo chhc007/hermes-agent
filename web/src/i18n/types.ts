@@ -239,6 +239,12 @@ export interface Translations {
      *  Optional — non-English locales fall back to the English literal. */
     editMessage?: string;
     editBusy?: string;
+    /** Session-ops feedback (undo/retry/stop). Optional, English fallback. */
+    undoNoSession?: string;
+    undoBusy?: string;
+    undoFailed?: string;
+    stopNoSession?: string;
+    stopFailed?: string;
   };
 
   // ── Voice mode (web voice input) ──

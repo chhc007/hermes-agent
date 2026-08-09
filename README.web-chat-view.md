@@ -635,7 +635,21 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.8**（当前，稳定）：**编辑历史用户消息 + 从此处重新生成** — 用户消息
+- **v1.8.1**（当前，稳定）：**撤销/重试/停止按钮可靠性修复** — 用户反馈 Web
+  聊天页的 ↶ 撤销 / ↻ 重试 / 停止按钮"经常没效果、没交互感"。
+  1) **根因**：`session.undo` 成功后 `/api/events` 不带用户帧，但
+  `undoLast`/`retryLast` 缺了本地 `trimMessagesBefore`（`handleEditMessage`
+  有、它们没有）→ 后端已回退、前端气泡纹丝不动；② undo/retry 按钮在
+  `meta.running` 时不禁用，但后端 4009 拒绝运行中 undo → 点击必失败且
+  catch 空吞；③ `stopTurn`/`undoLast` 的 catch 全部静默，无任何 banner。
+  2) **修复**：undo 成功且 `removed>0` 时本地 trim 到最后一条 user 气泡
+  （与 edit 同款契约）；undo/retry 按钮运行中禁用；`stopTurn`/`undoLast`
+  失败时 `setBanner` 显示原因（新增 i18n：undoNoSession/undoBusy/
+  undoFailed/stopNoSession/stopFailed）；`retryLast` 先取文本再 undo
+  （避免 trim 后取到上一条 user）。测试 407 passed（新增 3 个）。
+  改动：`web/src/pages/ChatPage.tsx` + `ChatPage.test.tsx` +
+  `web/src/i18n/{types,en,zh}.ts`。
+- **v1.8**（稳定）：**编辑历史用户消息 + 从此处重新生成** — 用户消息
   气泡悬停显示 ✎ 编辑按钮 → 内联 textarea（预填 `stripVoiceDirective` 后的原文，
   Enter 保存 / Esc 取消 / 空文本禁用）→ 保存时把会话回退到该消息之前并用编辑后
   文本重发，从该点重新生成。
