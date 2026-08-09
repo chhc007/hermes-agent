@@ -1,12 +1,11 @@
 // @vitest-environment jsdom
 /**
- * VoiceReply tests: renders nothing when disabled, triggers speakText + play
- * when enabled with new text, and surfaces synthesis errors.
+ * VoiceReply tests: mute toggle behavior + synthesis/play flow.
  */
 
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
 
 const speakMock = vi.hoisted(() =>
   vi.fn(async () => "data:audio/wav;base64,AAAA"),
@@ -24,6 +23,9 @@ vi.mock("@/i18n", () => ({
         replyActive: "Reading reply",
         stopReply: "Stop reading",
         replyError: "Voice reply failed",
+        muteReply: "Mute voice replies",
+        unmuteReply: "Unmute voice replies",
+        replyReady: "Voice replies on",
       },
     },
   }),
@@ -62,22 +64,57 @@ function playStub() {
   return audioProto;
 }
 
+function indicator(): HTMLButtonElement {
+  return container.querySelector(
+    '[data-slot="voice-reply-indicator"]',
+  ) as HTMLButtonElement;
+}
+
+const baseProps = {
+  enabled: true,
+  muted: false,
+  onToggleMuted: vi.fn(),
+  text: "",
+  runId: 0,
+};
+
 describe("VoiceReply", () => {
+  beforeEach(() => {
+    speakMock.mockClear();
+  });
+
   it("renders nothing when disabled", async () => {
     playStub();
     await render(
-      <VoiceReply enabled={false} text="hello" runId={1} />,
+      <VoiceReply {...baseProps} enabled={false} />,
     );
-    expect(container.querySelector('[data-slot="voice-reply-indicator"]')).toBeNull();
+    expect(indicator()).toBeNull();
   });
 
-  it("synthesizes and plays the reply when enabled", async () => {
+  it("synthesizes and plays the reply when enabled and not muted", async () => {
     const audioProto = playStub();
-    await render(<VoiceReply enabled text="你好" runId={1} />);
+    await render(<VoiceReply {...baseProps} text="你好" runId={1} />);
     await vi.waitFor(() => {
       expect(speakMock).toHaveBeenCalledWith("你好");
       expect(audioProto.play).toHaveBeenCalled();
     });
+  });
+
+  it("does NOT synthesize when muted", async () => {
+    playStub();
+    await render(<VoiceReply {...baseProps} muted text="你好" runId={1} />);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(speakMock).not.toHaveBeenCalled();
+  });
+
+  it("calls onToggleMuted when the indicator is clicked", async () => {
+    playStub();
+    const onToggleMuted = vi.fn();
+    await render(<VoiceReply {...baseProps} onToggleMuted={onToggleMuted} />);
+    await act(async () => {
+      indicator().click();
+    });
+    expect(onToggleMuted).toHaveBeenCalled();
   });
 
   it("surfaces synthesis errors", async () => {
@@ -85,7 +122,7 @@ describe("VoiceReply", () => {
     speakMock.mockRejectedValueOnce(new Error("synthesis down"));
     const onError = vi.fn();
     await render(
-      <VoiceReply enabled text="你好" runId={1} onError={onError} />,
+      <VoiceReply {...baseProps} text="你好" runId={1} onError={onError} />,
     );
     await vi.waitFor(() => {
       expect(onError).toHaveBeenCalled();

@@ -233,6 +233,9 @@ export const zh: Translations = {
     stopReply: "停止朗读",
     replyError: "语音回复失败",
     listening: "正在聆听…",
+    muteReply: "静音语音回复",
+    unmuteReply: "恢复语音回复",
+    replyReady: "语音回复已开启",
   },
 
   analytics: {

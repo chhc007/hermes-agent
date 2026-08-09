@@ -239,6 +239,9 @@ export const en: Translations = {
     stopReply: "Stop reading",
     replyError: "Voice reply failed",
     listening: "Listening…",
+    muteReply: "Mute voice replies",
+    unmuteReply: "Unmute voice replies",
+    replyReady: "Voice replies on",
   },
 
   analytics: {

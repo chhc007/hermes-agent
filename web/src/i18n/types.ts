@@ -254,6 +254,9 @@ export interface Translations {
     stopReply: string;
     replyError: string;
     listening: string;
+    muteReply: string;
+    unmuteReply: string;
+    replyReady: string;
   };
 
   // ── Analytics page ──

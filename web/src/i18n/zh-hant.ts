@@ -220,6 +220,9 @@ export const zhHant: Translations = {
     stopReply: "停止朗讀",
     replyError: "語音回覆失敗",
     listening: "正在聆聽…",
+    muteReply: "靜音語音回覆",
+    unmuteReply: "恢復語音回覆",
+    replyReady: "語音回覆已開啟",
   },
 
   analytics: {

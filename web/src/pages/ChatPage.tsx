@@ -251,10 +251,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Voice mode: settings persisted in localStorage; reply text fed by the
-  // chat event stream when voiceReply is enabled.
+  // chat event stream when voiceReply is enabled. `voiceMuted` is the
+  // floating-button mute toggle — when muted, live replies are NOT spoken.
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsT>(() =>
     loadVoiceSettings(),
   );
+  const [voiceMuted, setVoiceMuted] = useState(false);
   const [voiceReplyText, setVoiceReplyText] = useState("");
   const [voiceReplyRun, setVoiceReplyRun] = useState(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -447,21 +449,32 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // GatewayClient is shared with nothing else — clarify.respond mints its own.
   const [composerText, setComposerText] = useState("");
 
-  // Voice reply: when enabled and an assistant message completes, speak its
-  // final text. Tracked by message id so re-renders don't re-trigger.
+  // Voice reply: when enabled AND the assistant message was generated live
+  // (streaming → complete) in THIS session, speak its final text. History
+  // loaded on mount is already "complete" and must NOT trigger speech.
+  const lastStreamingMsgIdRef = useRef<string | null>(null);
   const lastSpokenMsgRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!voiceSettings.voiceReply) return;
     const msgs = chatStream.messages;
     if (!msgs.length) return;
     const last = msgs[msgs.length - 1];
-    if (!last || last.role !== "assistant" || last.status !== "complete") return;
+    if (!last || last.role !== "assistant") return;
+    // Track live streaming messages; only a message we SAW streaming (i.e.
+    // generated after this page mounted) may be spoken on completion.
+    if (last.status === "streaming") {
+      lastStreamingMsgIdRef.current = last.id;
+      return;
+    }
+    if (last.status !== "complete") return;
+    if (lastStreamingMsgIdRef.current !== last.id) return; // history, not live
+    if (voiceMuted) return;
+    if (!voiceSettings.voiceReply) return;
     if (!last.text || last.text.length < 2) return;
     if (lastSpokenMsgRef.current === last.id) return;
     lastSpokenMsgRef.current = last.id;
     setVoiceReplyText(last.text);
     setVoiceReplyRun((r) => r + 1);
-  }, [chatStream.messages, voiceSettings.voiceReply]);
+  }, [chatStream.messages, voiceSettings.voiceReply, voiceMuted]);
   const slashPopoverRef = useRef<SlashPopoverHandle | null>(null);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const completionGw = useMemo(() => new GatewayClient(), []);
@@ -2125,6 +2138,8 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
 
           <VoiceReply
             enabled={voiceSettings.voiceReply}
+            muted={voiceMuted}
+            onToggleMuted={() => setVoiceMuted((m) => !m)}
             text={voiceReplyText}
             runId={voiceReplyRun}
             onError={(msg) => setBanner(msg)}
