@@ -299,21 +299,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
         )}
 
         <div className="flex items-end gap-2">
-          <label
-            htmlFor="chat-input-file"
-            className="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-secondary/60 hover:text-text-secondary"
-            title={t.chat.attachFile}
-          >
-            <ImagePlus className="size-4" />
-            <input
-              id="chat-input-file"
-              type="file"
-              multiple
-              className="sr-only"
-              onChange={handlePickFile}
-            />
-          </label>
-
           <textarea
             ref={textareaRef}
             value={value}
@@ -345,14 +330,6 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             </button>
           )}
 
-          {voiceReady && (
-            <VoiceModeButton
-              enabled={voiceSettings.enabled}
-              active={false}
-              onToggle={() => setVoiceModeActive(true)}
-            />
-          )}
-
           <button
             type="button"
             onClick={() => void submit()}
@@ -367,6 +344,34 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           >
             <Send className="size-4" />
           </button>
+        </div>
+
+        {/* Toolbar row — attachments / voice / settings / voice-reply live
+            here so the composer row stays a single line even on narrow
+            phones (placeholder + many buttons previously wrapped). */}
+        <div className="flex items-center gap-1.5 border-t border-border/40 pt-1.5">
+          <label
+            htmlFor="chat-input-file"
+            className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-secondary/60 hover:text-text-secondary"
+            title={t.chat.attachFile}
+          >
+            <ImagePlus className="size-4" />
+            <input
+              id="chat-input-file"
+              type="file"
+              multiple
+              className="sr-only"
+              onChange={handlePickFile}
+            />
+          </label>
+
+          {voiceReady && (
+            <VoiceModeButton
+              enabled={voiceSettings.enabled}
+              active={false}
+              onToggle={() => setVoiceModeActive(true)}
+            />
+          )}
 
           {voiceReady && (
             <VoiceSettings
@@ -374,13 +379,10 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
               onChange={onVoiceSettingsChange}
             />
           )}
-        </div>
 
-        {/* Inline voice-reply mute toggle — replaces the old floating orb. */}
-        {voiceMuted !== undefined &&
-          onToggleVoiceMuted &&
-          voiceSettings?.voiceReply && (
-            <div className="flex items-center gap-1.5 px-0.5">
+          {voiceMuted !== undefined &&
+            onToggleVoiceMuted &&
+            voiceSettings?.voiceReply && (
               <VoiceReply
                 enabled={voiceSettings.voiceReply}
                 muted={voiceMuted}
@@ -389,8 +391,8 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
                 runId={voiceReplyRun ?? 0}
                 onError={onVoiceError}
               />
-            </div>
-          )}
+            )}
+        </div>
       </div>
     );
   },

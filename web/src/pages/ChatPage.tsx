@@ -838,6 +838,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       }
       const fullText = [...refLines, text].filter(Boolean).join("\n");
       if (!fullText.trim()) return true;
+
+      // Voice-reply mode: inject a brevity directive the model sees but the
+      // user's bubble does not — spoken replies stay short and punchy
+      // instead of reading a long markdown wall aloud.
+      const sentText =
+        voiceSettings.voiceReply && !voiceMuted
+          ? `${fullText}\n\n[系统提示] 当前处于语音播报模式，请用简洁口语化的语言回复，控制在 3 句话以内，先给结论。详细内容请用"详情见回复"等简短提示代替，因为整段回复会被语音朗读。`
+          : fullText;
       // Re-check the socket after the (async) upload — it may have dropped
       // or reconnected while we were waiting.
       const live = wsRef.current;
@@ -845,7 +853,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         setBanner("Chat is not connected — try again.");
         return false;
       }
-      live.send(fullText);
+      live.send(sentText);
       window.setTimeout(() => {
         const s = wsRef.current;
         if (s && s.readyState === WebSocket.OPEN) s.send("\r");
@@ -874,7 +882,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       sendUserMessageRef.current(display);
       return true;
     },
-    [],
+    [voiceSettings.voiceReply, voiceMuted],
   );
   const sendChatPromptRef = useRef(sendChatPrompt);
   useEffect(() => {
