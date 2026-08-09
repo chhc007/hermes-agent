@@ -204,6 +204,11 @@ export const ar = defineLocale({
     muteReply: "Mute voice replies",
     unmuteReply: "Unmute voice replies",
     replyReady: "Voice replies on",
+    enterVoiceMode: "Switch to voice input",
+    exitVoiceMode: "Back to text input",
+    holdToTalk: "Hold to talk",
+    releaseToSend: "Release to send",
+    releaseToCancel: "Release to cancel",
   },
 
   analytics: {

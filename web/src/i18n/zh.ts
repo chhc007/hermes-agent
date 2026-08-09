@@ -236,6 +236,11 @@ export const zh: Translations = {
     muteReply: "静音语音回复",
     unmuteReply: "恢复语音回复",
     replyReady: "语音回复已开启",
+    enterVoiceMode: "切换到语音输入",
+    exitVoiceMode: "返回文字输入",
+    holdToTalk: "按住 说话",
+    releaseToSend: "松开 发送",
+    releaseToCancel: "松开 取消",
   },
 
   analytics: {

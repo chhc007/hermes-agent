@@ -115,6 +115,7 @@ export class VoiceRecorder {
   private _onStop: ((blob: Blob, mimeType: string) => void) | null = null;
   private _onError: ((err: Error) => void) | null = null;
   private stopped = false;
+  private cancelled = false;
 
   constructor(
     onLevel?: (level: number) => void,
@@ -126,11 +127,12 @@ export class VoiceRecorder {
     this._onError = onError ?? null;
   }
 
-  async start(): Promise<void> {
+  async start(vadEnabled = true): Promise<void> {
     if (!navigator.mediaDevices?.getUserMedia) {
       throw new Error("浏览器不支持麦克风访问（需 HTTPS 或 localhost）");
     }
     this.stopped = false;
+    this.cancelled = false;
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -161,6 +163,9 @@ export class VoiceRecorder {
       // the max-duration cap all funnel through here. (Do NOT gate on
       // `this.stopped`: stop() sets it before mediaRecorder.stop() fires this
       // handler, which would make manual stop silently drop the recording.)
+      // EXCEPT a deliberate cancel() (WeChat-style slide-to-cancel): the
+      // recording is discarded without transcription.
+      if (this.cancelled) return;
       this._onStop?.(blob, type);
     };
     this.mediaRecorder.onerror = () => {
@@ -195,7 +200,10 @@ export class VoiceRecorder {
       if (this.mediaRecorder?.state === "recording") this.stop();
     }, MAX_RECORDING_MS);
 
-    this.pollLevel();
+    // VAD silence-detection auto-stop — only in hands-free mode (default).
+    // In hold-to-talk mode (WeChat style) the user ends the recording by
+    // releasing, so auto-stop would cut them off mid-sentence.
+    if (vadEnabled) this.pollLevel();
   }
 
   private pollLevel(): void {
@@ -237,6 +245,13 @@ export class VoiceRecorder {
     if (!this.mediaRecorder || this.mediaRecorder.state === "inactive") {
       this.cleanup();
     }
+  }
+
+  /** Stop and discard the recording (WeChat-style slide-to-cancel). */
+  cancel(): void {
+    if (this.stopped) return;
+    this.cancelled = true;
+    this.stop();
   }
 
   private cleanup(): void {

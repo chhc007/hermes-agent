@@ -16,6 +16,7 @@ import { Volume2, VolumeX, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
+import { cn } from "@/lib/utils";
 import { cleanTextForSpeech, speakText } from "@/lib/voiceMode";
 
 interface VoiceReplyProps {
@@ -117,12 +118,12 @@ export function VoiceReply({
       onClick={onToggleMuted}
       aria-label={label}
       title={label}
-      className={
-        "fixed bottom-20 right-4 z-50 flex size-9 items-center justify-center rounded-full border shadow-md backdrop-blur transition-colors " +
-        (muted
-          ? "border-border/60 bg-background/80 text-text-tertiary hover:bg-secondary/60"
-          : "border-border/70 bg-background/90 text-text-secondary hover:bg-secondary/60")
-      }
+      className={cn(
+        "flex size-8 shrink-0 items-center justify-center rounded-md transition-colors",
+        muted
+          ? "text-text-tertiary hover:bg-secondary/60"
+          : "text-primary hover:bg-secondary/60",
+      )}
       data-slot="voice-reply-indicator"
       data-muted={muted ? "true" : "false"}
     >

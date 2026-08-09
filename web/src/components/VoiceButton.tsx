@@ -1,15 +1,18 @@
 /**
- * VoiceButton — ChatGPT-style mic button in the chat composer.
+ * VoiceModeButton + VoiceHoldButton — WeChat-style voice input.
  *
- * Click to start recording (user's browser mic). A live audio-level meter
- * animates while recording; VAD (silence detection) stops recording
- * automatically once the user stops speaking. The transcript is then either
- * sent immediately (sendMode "auto") or handed to the parent to fill the
- * composer (sendMode "confirm").
+ * - VoiceModeButton: small mic icon beside the composer. Clicking enters
+ *   voice mode (the composer surface swaps to a big hold-to-talk button) or
+ *   exits back to text input.
+ * - VoiceHoldButton: the big button shown while voice mode is active. Hold
+ *   to record; slide UP into the cancel zone (shown as "松开 取消") and
+ *   release to DISCARD; release anywhere else to transcribe + send.
+ *
+ * Both share the VoiceRecorder (cancel() discards, stop() transcribes).
  */
 
-import { Mic, MicOff, Square, Loader2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Mic, MicOff, Square, Loader2, Keyboard } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -17,58 +20,105 @@ import {
   VoiceRecorder,
   transcribeAudio,
   type SttProvider,
-  type VoiceRecorderState,
 } from "@/lib/voiceMode";
 
-interface VoiceButtonProps {
-  /** Master switch (from settings). */
+type HoldState = "idle" | "requesting" | "recording" | "cancelling" | "transcribing";
+
+interface BaseProps {
   enabled: boolean;
-  /** STT provider override passed to the transcribe API. */
   sttProvider?: SttProvider;
   onTranscript: (text: string) => void;
   onError?: (message: string) => void;
+}
+
+// ── Mode toggle button (small mic icon) ───────────────────────────────
+
+interface VoiceModeButtonProps {
+  enabled: boolean;
+  active: boolean;
+  onToggle: () => void;
   className?: string;
 }
 
-export function VoiceButton({
+export function VoiceModeButton({
+  enabled,
+  active,
+  onToggle,
+  className,
+}: VoiceModeButtonProps) {
+  const { t } = useI18n();
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={!enabled}
+      aria-label={active ? t.voice.exitVoiceMode : t.voice.enterVoiceMode}
+      title={active ? t.voice.exitVoiceMode : t.voice.enterVoiceMode}
+      className={cn(
+        "flex size-8 shrink-0 items-center justify-center rounded-md transition-colors",
+        active
+          ? "bg-primary/15 text-primary"
+          : "text-text-tertiary hover:bg-secondary/60 hover:text-text-secondary",
+        !enabled && "cursor-not-allowed opacity-50",
+        className,
+      )}
+    >
+      {active ? <Keyboard className="size-4" /> : <Mic className="size-4" />}
+    </button>
+  );
+}
+
+// ── Hold-to-talk button (voice-mode surface) ─────────────────────────
+
+interface VoiceHoldButtonProps extends BaseProps {
+  /** Cancel-zone distance above the button (px). */
+  cancelDistance?: number;
+}
+
+export function VoiceHoldButton({
   enabled,
   sttProvider,
   onTranscript,
   onError,
-  className,
-}: VoiceButtonProps) {
+  cancelDistance = 72,
+}: VoiceHoldButtonProps) {
   const { t } = useI18n();
-  const [state, setState] = useState<VoiceRecorderState>("idle");
+  const [state, setState] = useState<HoldState>("idle");
   const [level, setLevel] = useState(0);
+  const stateRef = useRef<HoldState>("idle");
   const recorderRef = useRef<VoiceRecorder | null>(null);
-  const stateRef = useRef<VoiceRecorderState>("idle");
+  const startYRef = useRef(0);
+  const suppressClickRef = useRef(false);
 
-  const setStateBoth = (s: VoiceRecorderState) => {
+  const setStateBoth = (s: HoldState) => {
     stateRef.current = s;
     setState(s);
   };
 
   useEffect(() => {
     return () => {
-      recorderRef.current?.stop();
+      recorderRef.current?.cancel();
       recorderRef.current = null;
     };
   }, []);
 
-  const handleError = (message: string) => {
-    setStateBoth("error");
-    onError?.(message);
-    // Reset back to idle shortly so the button is usable again.
-    window.setTimeout(() => setStateBoth("idle"), 1800);
-  };
+  const handleError = useCallback(
+    (message: string) => {
+      setStateBoth("idle");
+      onError?.(message);
+    },
+    [onError],
+  );
 
-  const startRecording = async () => {
-    if (!enabled) return;
+  const beginHold = async (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (!enabled || stateRef.current !== "idle") return;
+    suppressClickRef.current = true;
+    startYRef.current = e.clientY;
     setStateBoth("requesting");
     const recorder = new VoiceRecorder(
       (lvl) => setLevel(lvl),
       (blob) => {
-        // VAD stopped the recording — transcribe.
+        // Released (not cancelled) — transcribe.
         setStateBoth("transcribing");
         void (async () => {
           try {
@@ -90,7 +140,8 @@ export function VoiceButton({
     );
     recorderRef.current = recorder;
     try {
-      await recorder.start();
+      // Hold-to-talk: VAD disabled (release ends the recording).
+      await recorder.start(/* vadEnabled */ false);
       setStateBoth("recording");
       setLevel(0);
     } catch (err) {
@@ -100,72 +151,81 @@ export function VoiceButton({
     }
   };
 
-  const stopRecording = () => {
-    recorderRef.current?.stop();
-    recorderRef.current = null;
-    // VAD or manual stop triggers the onStop transcription path.
-  };
-
-  const busy = state === "requesting" || state === "transcribing";
-  const recording = state === "recording";
-
-  const handleClick = () => {
-    if (busy) return;
-    if (recording) {
-      stopRecording();
-    } else {
-      void startRecording();
+  const moveHold = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const cur = stateRef.current;
+    if (cur !== "recording" && cur !== "cancelling") return;
+    const dy = startYRef.current - e.clientY;
+    if (dy > cancelDistance) {
+      if (cur !== "cancelling") setStateBoth("cancelling");
+    } else if (cur === "cancelling") {
+      setStateBoth("recording");
     }
   };
 
-  const ariaLabel = recording
-    ? t.voice.stopRecording
-    : busy
+  const endHold = () => {
+    const was = stateRef.current;
+    if (was === "requesting" || was === "transcribing") return;
+    const recorder = recorderRef.current;
+    recorderRef.current = null;
+    if (!recorder) return;
+    if (was === "cancelling") {
+      recorder.cancel(); // discard — onstop skips transcribe
+      setStateBoth("idle");
+      setLevel(0);
+    } else if (was === "recording") {
+      recorder.stop(); // → onstop → transcribe → send
+    }
+  };
+
+  const recording = state === "recording" || state === "cancelling";
+
+  const label =
+    state === "transcribing"
       ? t.voice.transcribing
-      : t.voice.startRecording;
+      : state === "cancelling"
+        ? t.voice.releaseToCancel
+        : recording
+          ? t.voice.releaseToSend
+          : t.voice.holdToTalk;
 
   return (
     <button
       type="button"
-      onClick={handleClick}
-      disabled={!enabled || busy}
-      aria-label={ariaLabel}
-      title={ariaLabel}
+      onPointerDown={beginHold}
+      onPointerMove={moveHold}
+      onPointerUp={endHold}
+      onPointerLeave={endHold}
+      disabled={!enabled}
+      aria-label={label}
+      title={label}
       className={cn(
-        "relative flex size-8 shrink-0 items-center justify-center rounded-md transition-colors",
-        recording
-          ? "bg-red-500/90 text-white hover:bg-red-500"
-          : "text-text-tertiary hover:bg-secondary/60 hover:text-text-secondary",
-        (!enabled || busy) && "cursor-not-allowed opacity-50",
-        className,
+        "relative flex h-14 w-full select-none items-center justify-center gap-2 rounded-xl border text-sm font-medium transition-colors",
+        state === "cancelling"
+          ? "border-red-500/60 bg-red-500/10 text-red-500"
+          : recording
+            ? "border-primary/50 bg-primary/10 text-primary"
+            : "border-border/70 bg-secondary/40 text-foreground/90 hover:bg-secondary/60",
+        state === "requesting" && "opacity-60",
       )}
     >
-      {recording && (
-        <span
-          className="absolute inset-0 animate-ping rounded-md bg-red-500/30"
-          aria-hidden
-        />
-      )}
-      {busy ? (
+      {state === "requesting" || state === "transcribing" ? (
         <Loader2 className="size-4 animate-spin" />
       ) : recording ? (
         <Square className="size-3.5" />
-      ) : enabled ? (
-        <Mic className="size-4" />
       ) : (
-        <MicOff className="size-4" />
+        <Mic className="size-4" />
       )}
+      {label}
       {recording && (
-        <span
-          className="absolute inset-x-1 bottom-0.5 h-0.5 overflow-hidden rounded-full bg-white/40"
-          aria-hidden
-        >
+        <span className="absolute inset-x-2 bottom-1 h-0.5 overflow-hidden rounded-full bg-current/30" aria-hidden>
           <span
-            className="block h-full bg-white transition-[width] duration-75"
-            style={{ width: `${Math.min(100, Math.max(8, level * 260))}%` }}
+            className="block h-full bg-current transition-[width] duration-75"
+            style={{ width: `${Math.min(100, Math.max(8, level * 220))}%` }}
           />
         </span>
       )}
     </button>
   );
 }
+
+export { MicOff as MicOffIcon };

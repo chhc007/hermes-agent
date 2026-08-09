@@ -257,6 +257,11 @@ export interface Translations {
     muteReply: string;
     unmuteReply: string;
     replyReady: string;
+    enterVoiceMode: string;
+    exitVoiceMode: string;
+    holdToTalk: string;
+    releaseToSend: string;
+    releaseToCancel: string;
   };
 
   // ── Analytics page ──

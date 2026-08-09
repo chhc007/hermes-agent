@@ -28,7 +28,8 @@ import {
 import { filesFromTransfer, formatFileSize, transferHasFiles } from "@/lib/chatFileUpload";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
-import { VoiceButton } from "@/components/VoiceButton";
+import { VoiceHoldButton, VoiceModeButton } from "@/components/VoiceButton";
+import { VoiceReply } from "@/components/VoiceReply";
 import { VoiceSettings } from "@/components/VoiceSettings";
 import type { VoiceSettings as VoiceSettingsT } from "@/lib/voiceMode";
 
@@ -58,11 +59,17 @@ interface ChatInputProps {
   className?: string;
   /** Voice-mode settings (owned by ChatPage). */
   voiceSettings?: VoiceSettingsT;
-  /** Called when the voice button produces a transcript. */
+  /** Called when the voice hold button produces a transcript. */
   onVoiceTranscript?: (text: string) => void;
   /** Called when voice settings change. */
   onVoiceSettingsChange?: (settings: VoiceSettingsT) => void;
   onVoiceError?: (message: string) => void;
+  /** Voice-reply mute state (owned by ChatPage). */
+  voiceMuted?: boolean;
+  onToggleVoiceMuted?: () => void;
+  /** Live-reply speech payload (owned by ChatPage's trigger effect). */
+  voiceReplyText?: string;
+  voiceReplyRun?: number;
 }
 
 export interface ChatInputHandle {
@@ -86,12 +93,19 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       onVoiceTranscript,
       onVoiceSettingsChange,
       onVoiceError,
+      voiceMuted,
+      onToggleVoiceMuted,
+      voiceReplyText,
+      voiceReplyRun,
     },
     ref,
   ) {
     const [value, setValue] = useState("");
     const [attachments, setAttachments] = useState<File[]>([]);
     const [dragging, setDragging] = useState(false);
+    // WeChat-style voice mode: the composer surface swaps to a hold-to-talk
+    // button; clicking the mic toggle again returns to text input.
+    const [voiceModeActive, setVoiceModeActive] = useState(false);
     // Expanded composer: user clicked the grow button for a taller editing
     // area. Auto-grow caps at GROW_LINE_CAP rows; beyond that we stop growing
     // and show a maximize button instead of letting the box swallow the page.
@@ -200,6 +214,47 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
       setAttachments((prev) => prev.filter((_, i) => i !== index));
     };
 
+    const voiceReady = voiceSettings && onVoiceTranscript && onVoiceSettingsChange;
+
+    // In WeChat-style voice mode the whole composer is the hold-to-talk
+    // surface — textarea, attachments and send are hidden.
+    if (voiceModeActive && voiceReady) {
+      return (
+        <div
+          className={cn(
+            "relative flex flex-col gap-2 rounded-lg border border-border/70 bg-secondary/20 p-2",
+            className,
+          )}
+        >
+          <VoiceHoldButton
+            enabled={voiceSettings.enabled}
+            sttProvider={voiceSettings.sttProvider}
+            onTranscript={onVoiceTranscript}
+            onError={onVoiceError}
+          />
+          <div className="flex items-center gap-1.5">
+            <VoiceModeButton
+              enabled={voiceSettings.enabled}
+              active
+              onToggle={() => setVoiceModeActive(false)}
+            />
+            <VoiceSettings settings={voiceSettings} onChange={onVoiceSettingsChange} />
+            <div className="ml-auto" />
+            {voiceMuted !== undefined && onToggleVoiceMuted && (
+              <VoiceReply
+                enabled={voiceSettings.voiceReply}
+                muted={voiceMuted}
+                onToggleMuted={onToggleVoiceMuted}
+                text={voiceReplyText ?? ""}
+                runId={voiceReplyRun ?? 0}
+                onError={onVoiceError}
+              />
+            )}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         className={cn(
@@ -290,12 +345,11 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             </button>
           )}
 
-          {voiceSettings && onVoiceTranscript && (
-            <VoiceButton
+          {voiceReady && (
+            <VoiceModeButton
               enabled={voiceSettings.enabled}
-              sttProvider={voiceSettings.sttProvider}
-              onTranscript={onVoiceTranscript}
-              onError={onVoiceError}
+              active={false}
+              onToggle={() => setVoiceModeActive(true)}
             />
           )}
 
@@ -314,13 +368,29 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             <Send className="size-4" />
           </button>
 
-          {voiceSettings && onVoiceSettingsChange && (
+          {voiceReady && (
             <VoiceSettings
               settings={voiceSettings}
               onChange={onVoiceSettingsChange}
             />
           )}
         </div>
+
+        {/* Inline voice-reply mute toggle — replaces the old floating orb. */}
+        {voiceMuted !== undefined &&
+          onToggleVoiceMuted &&
+          voiceSettings?.voiceReply && (
+            <div className="flex items-center gap-1.5 px-0.5">
+              <VoiceReply
+                enabled={voiceSettings.voiceReply}
+                muted={voiceMuted}
+                onToggleMuted={onToggleVoiceMuted}
+                text={voiceReplyText ?? ""}
+                runId={voiceReplyRun ?? 0}
+                onError={onVoiceError}
+              />
+            </div>
+          )}
       </div>
     );
   },

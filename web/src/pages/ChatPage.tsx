@@ -41,7 +41,6 @@ import { useSearchParams } from "react-router";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
 import { ChatInput, type ChatInputHandle } from "@/components/ChatInput";
-import { VoiceReply } from "@/components/VoiceReply";
 import {
   loadVoiceSettings,
   saveVoiceSettings,
@@ -2131,19 +2130,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                   onVoiceTranscript={handleVoiceTranscript}
                   onVoiceSettingsChange={handleVoiceSettingsChange}
                   onVoiceError={(msg) => setBanner(msg)}
+                  voiceMuted={voiceMuted}
+                  onToggleVoiceMuted={() => setVoiceMuted((m) => !m)}
+                  voiceReplyText={voiceReplyText}
+                  voiceReplyRun={voiceReplyRun}
                 />
               </div>
             </div>
           )}
-
-          <VoiceReply
-            enabled={voiceSettings.voiceReply}
-            muted={voiceMuted}
-            onToggleMuted={() => setVoiceMuted((m) => !m)}
-            text={voiceReplyText}
-            runId={voiceReplyRun}
-            onError={(msg) => setBanner(msg)}
-          />
 
           {modelPickerOpen && (
             <ModelPickerDialog

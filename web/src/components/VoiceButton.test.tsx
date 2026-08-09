@@ -1,21 +1,23 @@
 // @vitest-environment jsdom
 /**
- * VoiceButton component tests. Mocks getUserMedia + MediaRecorder + the
- * transcribeAudio API to verify the record → transcribe → onTranscript flow.
+ * VoiceHoldButton + VoiceModeButton tests. Mocks getUserMedia +
+ * MediaRecorder + transcribeAudio to verify the WeChat-style hold-to-talk
+ * flow: press → record → release sends; slide up → release cancels.
  */
 
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, beforeEach, vi } from "vitest";
+
+const transcribeMock = vi.hoisted(() =>
+  vi.fn(async () => ({ transcript: "你好世界", provider: "local" })),
+);
 
 vi.mock("@/lib/voiceMode", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/voiceMode")>();
   return {
     ...actual,
-    transcribeAudio: vi.fn(async () => ({
-      transcript: "你好世界",
-      provider: "local",
-    })),
+    transcribeAudio: transcribeMock,
   };
 });
 
@@ -23,8 +25,11 @@ vi.mock("@/i18n", () => ({
   useI18n: () => ({
     t: {
       voice: {
-        startRecording: "Start voice input",
-        stopRecording: "Stop recording",
+        enterVoiceMode: "Switch to voice input",
+        exitVoiceMode: "Back to text input",
+        holdToTalk: "Hold to talk",
+        releaseToSend: "Release to send",
+        releaseToCancel: "Release to cancel",
         transcribing: "Transcribing…",
         noSpeech: "No speech detected",
       },
@@ -32,7 +37,7 @@ vi.mock("@/i18n", () => ({
   }),
 }));
 
-import { VoiceButton } from "./VoiceButton";
+import { VoiceHoldButton, VoiceModeButton } from "./VoiceButton";
 
 class FakeMediaRecorder {
   static isTypeSupported() {
@@ -64,7 +69,6 @@ function stubMedia() {
       })),
     },
   });
-  // jsdom has no AudioContext — the recorder falls back to manual stop.
   vi.stubGlobal("AudioContext", undefined);
 }
 
@@ -78,56 +82,121 @@ async function render(ui: ReactNode) {
   await act(async () => root.render(ui));
 }
 
-function micButton(): HTMLButtonElement {
+function holdButton(): HTMLButtonElement {
   return Array.from(container.querySelectorAll("button")).find(
-    (b) => b.getAttribute("aria-label") === "Start voice input",
+    (b) => b.getAttribute("aria-label")?.includes("Hold") ||
+      b.getAttribute("aria-label")?.includes("Release"),
   ) as HTMLButtonElement;
 }
 
-describe("VoiceButton", () => {
-  it("renders a mic button when enabled", async () => {
+function pointerDown(el: HTMLElement, clientY = 100) {
+  el.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, clientY }),
+  );
+}
+
+function pointerUp(el: HTMLElement, clientY = 100) {
+  el.dispatchEvent(
+    new PointerEvent("pointerup", { bubbles: true, clientY }),
+  );
+}
+
+function pointerMove(el: HTMLElement, clientY: number) {
+  el.dispatchEvent(
+    new PointerEvent("pointermove", { bubbles: true, clientY }),
+  );
+}
+
+describe("VoiceModeButton", () => {
+  beforeEach(() => {
     stubMedia();
-    await render(<VoiceButton enabled onTranscript={vi.fn()} />);
-    expect(micButton()).toBeTruthy();
-    expect(micButton().disabled).toBe(false);
+    transcribeMock.mockClear();
   });
 
-  it("renders a disabled button when disabled", async () => {
-    stubMedia();
-    await render(<VoiceButton enabled={false} onTranscript={vi.fn()} />);
-    expect(micButton().disabled).toBe(true);
-  });
-
-  it("records, transcribes, and delivers the transcript on stop", async () => {
-    stubMedia();
-    const onTranscript = vi.fn();
-    const onError = vi.fn();
-    await render(<VoiceButton enabled onTranscript={onTranscript} onError={onError} />);
-
-    // Start recording.
+  it("toggles voice mode via the mic button", async () => {
+    const onToggle = vi.fn();
+    await render(
+      <VoiceModeButton enabled active={false} onToggle={onToggle} />,
+    );
+    const btn = Array.from(container.querySelectorAll("button")).find(
+      (b) => b.getAttribute("aria-label") === "Switch to voice input",
+    ) as HTMLButtonElement;
+    expect(btn).toBeTruthy();
     await act(async () => {
-      micButton().click();
+      btn.click();
     });
-    // Button switches to stop mode.
+    expect(onToggle).toHaveBeenCalled();
+  });
+});
+
+describe("VoiceHoldButton", () => {
+  const onTranscript = vi.fn();
+  const onError = vi.fn();
+
+  beforeEach(() => {
+    stubMedia();
+    onTranscript.mockClear();
+    onError.mockClear();
+    transcribeMock.mockClear();
+  });
+
+  it("renders the hold-to-talk label", async () => {
+    await render(
+      <VoiceHoldButton enabled onTranscript={onTranscript} onError={onError} />,
+    );
+    expect(holdButton()).toBeTruthy();
+  });
+
+  it("records on press and transcribes on release", async () => {
+    await render(
+      <VoiceHoldButton enabled onTranscript={onTranscript} onError={onError} />,
+    );
+    const btn = holdButton();
+    await act(async () => {
+      pointerDown(btn, 100);
+    });
+    // Recording starts → label changes.
     await vi.waitFor(() => {
       expect(
-        Array.from(container.querySelectorAll("button")).find(
-          (b) => b.getAttribute("aria-label") === "Stop recording",
+        Array.from(container.querySelectorAll("button")).some((b) =>
+          (b.getAttribute("aria-label") ?? "").includes("Release"),
         ),
-      ).toBeTruthy();
+      ).toBe(true);
     });
-
-    // Click stop → mediaRecorder.stop() → onstop → transcribe → onTranscript.
-    const stopBtn = Array.from(container.querySelectorAll("button")).find(
-      (b) => b.getAttribute("aria-label") === "Stop recording",
-    ) as HTMLButtonElement;
     await act(async () => {
-      stopBtn.click();
+      pointerUp(btn, 100);
     });
-
     await vi.waitFor(() => {
       expect(onTranscript).toHaveBeenCalledWith("你好世界");
     });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("cancels when released after sliding into the cancel zone", async () => {
+    await render(
+      <VoiceHoldButton enabled onTranscript={onTranscript} onError={onError} />
+    );
+    const btn = holdButton();
+    await act(async () => {
+      pointerDown(btn, 200);
+    });
+    await vi.waitFor(() => {
+      expect(
+        Array.from(container.querySelectorAll("button")).some((b) =>
+          (b.getAttribute("aria-label") ?? "").includes("Release"),
+        ),
+      ).toBe(true);
+    });
+    // Slide up beyond the cancel distance (72px).
+    await act(async () => {
+      pointerMove(btn, 60); // dy = 140 > 72 → cancelling
+    });
+    await act(async () => {
+      pointerUp(btn, 60);
+    });
+    // Cancelled → no transcript.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(onTranscript).not.toHaveBeenCalled();
     expect(onError).not.toHaveBeenCalled();
   });
 
@@ -139,10 +208,15 @@ describe("VoiceButton", () => {
         }),
       },
     });
-    const onError = vi.fn();
-    await render(<VoiceButton enabled onTranscript={vi.fn()} onError={onError} />);
+    await render(
+      <VoiceHoldButton enabled onTranscript={onTranscript} onError={onError} />,
+    );
+    const btn = holdButton();
     await act(async () => {
-      micButton().click();
+      pointerDown(btn, 100);
+    });
+    await act(async () => {
+      pointerUp(btn, 100);
     });
     await vi.waitFor(() => {
       expect(onError).toHaveBeenCalledWith("mic denied");

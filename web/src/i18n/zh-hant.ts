@@ -223,6 +223,11 @@ export const zhHant: Translations = {
     muteReply: "靜音語音回覆",
     unmuteReply: "恢復語音回覆",
     replyReady: "語音回覆已開啟",
+    enterVoiceMode: "切換到語音輸入",
+    exitVoiceMode: "返回文字輸入",
+    holdToTalk: "按住 說話",
+    releaseToSend: "鬆開 傳送",
+    releaseToCancel: "鬆開 取消",
   },
 
   analytics: {
