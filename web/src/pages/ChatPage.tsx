@@ -451,8 +451,33 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // Voice reply: when enabled AND the assistant message was generated live
   // (streaming → complete) in THIS session, speak its final text. History
   // loaded on mount is already "complete" and must NOT trigger speech.
+  //
+  // IMPORTANT: this effect's deps are ONLY chatStream.messages — NOT
+  // voiceSettings.voiceReply / voiceMuted. Re-running on a settings change
+  // would re-inspect the LAST message: toggling the reply switch on (or
+  // unmuting) would replay the most recent reply as if it were new. The
+  // switch/mute state is read through refs so only a genuinely NEW message
+  // (streaming → complete transition) can trigger speech.
+  const voiceReplyRef = useRef(voiceSettings.voiceReply);
+  const voiceMutedRef = useRef(voiceMuted);
   const lastStreamingMsgIdRef = useRef<string | null>(null);
   const lastSpokenMsgRef = useRef<string | null>(null);
+  useEffect(() => {
+    const wasOn = voiceReplyRef.current;
+    voiceReplyRef.current = voiceSettings.voiceReply;
+    voiceMutedRef.current = voiceMuted;
+    // Toggling the reply switch ON must NOT replay the last message: reset
+    // the streaming/spoken markers so only messages that complete AFTER the
+    // switch turns on (or after unmute) can be spoken.
+    if (!wasOn && voiceSettings.voiceReply) {
+      lastStreamingMsgIdRef.current = null;
+      lastSpokenMsgRef.current = null;
+    }
+    if (voiceMuted) {
+      lastSpokenMsgRef.current = null; // allow the next live reply after unmute
+    }
+  }, [voiceSettings.voiceReply, voiceMuted]);
+
   useEffect(() => {
     const msgs = chatStream.messages;
     if (!msgs.length) return;
@@ -466,14 +491,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     }
     if (last.status !== "complete") return;
     if (lastStreamingMsgIdRef.current !== last.id) return; // history, not live
-    if (voiceMuted) return;
-    if (!voiceSettings.voiceReply) return;
+    if (voiceMutedRef.current) return;
+    if (!voiceReplyRef.current) return;
     if (!last.text || last.text.length < 2) return;
     if (lastSpokenMsgRef.current === last.id) return;
     lastSpokenMsgRef.current = last.id;
     setVoiceReplyText(last.text);
     setVoiceReplyRun((r) => r + 1);
-  }, [chatStream.messages, voiceSettings.voiceReply, voiceMuted]);
+  }, [chatStream.messages]);
   const slashPopoverRef = useRef<SlashPopoverHandle | null>(null);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const completionGw = useMemo(() => new GatewayClient(), []);
