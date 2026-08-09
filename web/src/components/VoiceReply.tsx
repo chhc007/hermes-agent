@@ -11,7 +11,7 @@ import { Volume2, VolumeX, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useI18n } from "@/i18n";
-import { speakText } from "@/lib/voiceMode";
+import { cleanTextForSpeech, speakText } from "@/lib/voiceMode";
 
 interface VoiceReplyProps {
   enabled: boolean;
@@ -47,7 +47,12 @@ export function VoiceReply({ enabled, text, runId, onError }: VoiceReplyProps) {
     setBusy(true);
     void (async () => {
       try {
-        const dataUrl = await speakText(text);
+        const speechText = cleanTextForSpeech(text);
+        if (!speechText) {
+          setBusy(false);
+          return;
+        }
+        const dataUrl = await speakText(speechText);
         if (currentRun.current !== runId) return; // superseded
         audioRef.current?.pause();
         const audio = new Audio(dataUrl);

@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_VOICE_SETTINGS,
   blobToDataUrl,
+  cleanTextForSpeech,
   loadVoiceSettings,
   saveVoiceSettings,
   speakText,
@@ -141,5 +142,33 @@ describe("voiceMode API helpers", () => {
       provider: null,
     });
     await expect(speakText("你好")).rejects.toThrow("语音合成失败");
+  });
+});
+
+describe("cleanTextForSpeech", () => {
+  it("strips markdown emphasis and keeps prose", () => {
+    expect(cleanTextForSpeech("**重点** 内容与 `code` 示例")).toBe("重点 内容与 code 示例");
+  });
+
+  it("drops fenced code blocks", () => {
+    const raw = "前面\n```python\nprint('x')\n```\n后面";
+    expect(cleanTextForSpeech(raw)).toBe("前面\n后面");
+  });
+
+  it("converts links to labels and drops bare URLs", () => {
+    expect(
+      cleanTextForSpeech("看 [文档](https://example.com) 和 https://x.com/y"),
+    ).toBe("看 文档 和");
+  });
+
+  it("flattens table pipes and drops emoji", () => {
+    expect(cleanTextForSpeech("| A | B |\n| 1 | 2 | 🎉")).toBe("A B\n1 2");
+  });
+
+  it("truncates long replies at a sentence boundary", () => {
+    const long = "这是第一句话。".repeat(200);
+    const out = cleanTextForSpeech(long);
+    expect(out.length).toBeLessThan(long.length);
+    expect(out.endsWith("（以下省略）")).toBe(true);
   });
 });

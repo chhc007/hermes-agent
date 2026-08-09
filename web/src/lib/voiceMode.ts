@@ -319,3 +319,60 @@ export async function speakText(text: string): Promise<string> {
   }
   return res.data_url;
 }
+
+const MAX_SPEECH_CHARS = 800;
+
+/**
+ * Clean assistant text before TTS so the speaker reads prose, not markup.
+ * Strips code blocks/inline code, markdown emphasis, table pipes, links,
+ * bare URLs, bullet markers, emoji, and collapses whitespace. Long replies
+ * are truncated at a sentence boundary with a tail marker.
+ */
+export function cleanTextForSpeech(raw: string): string {
+  if (!raw) return "";
+  let text = raw;
+
+  // Fenced code blocks (```...``` or ~~~...~~~) — drop entirely.
+  text = text.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, " ");
+  // Inline code `...` — keep content, drop backticks.
+  text = text.replace(/`([^`]*)`/g, "$1");
+  // Markdown links [label](url) → label.
+  text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  // Bare URLs → drop.
+  text = text.replace(/https?:\/\/\S+/g, " ");
+  // Table pipes → spaces (row becomes "cell cell cell").
+  text = text.replace(/\|/g, " ");
+  // Emoji (incl. variation selectors + ZWJ sequences) → drop. Split the
+  // ranges to satisfy no-misleading-character-class (ZWJ/VS are combining).
+  text = text.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/gu, " ");
+  text = text.replace(/[\uFE0F\u200D]/gu, "");
+  // Markdown decorations: bold/italic/heading/quote/bullet/list markers.
+  text = text.replace(/[*_~]{1,3}/g, "");
+  text = text.replace(/^#{1,6}\s+/gm, "");
+  text = text.replace(/^\s*(?:>|\+|-|\d+\.)\s+/gm, "");
+  // Collapse runs of whitespace + blank lines + trailing spaces per line.
+  text = text
+    .replace(/[ \t]+$/gm, "")
+    .replace(/^[ \t]+/gm, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n[ \t]*\n+/g, "\n");
+
+  text = text.trim();
+
+  // Truncate long replies at a sentence boundary.
+  if (text.length > MAX_SPEECH_CHARS) {
+    const cut = text.slice(0, MAX_SPEECH_CHARS);
+    const lastSentence = Math.max(
+      cut.lastIndexOf("。"),
+      cut.lastIndexOf("！"),
+      cut.lastIndexOf("？"),
+      cut.lastIndexOf("."),
+      cut.lastIndexOf("!"),
+      cut.lastIndexOf("?"),
+    );
+    const end = lastSentence > MAX_SPEECH_CHARS * 0.5 ? lastSentence + 1 : MAX_SPEECH_CHARS;
+    text = `${text.slice(0, end).trim()}……（以下省略）`;
+  }
+
+  return text.trim();
+}

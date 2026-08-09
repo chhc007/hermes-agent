@@ -14,6 +14,7 @@ const speakMock = vi.hoisted(() =>
 
 vi.mock("@/lib/voiceMode", () => ({
   speakText: speakMock,
+  cleanTextForSpeech: (text: string) => text.trim(),
 }));
 
 vi.mock("@/i18n", () => ({
