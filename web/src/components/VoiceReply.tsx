@@ -128,15 +128,18 @@ export function VoiceReply({
       className={cn(
         "flex size-8 shrink-0 items-center justify-center rounded-md transition-colors",
         muted
-          ? "text-text-tertiary hover:bg-secondary/60"
-          : "text-primary hover:bg-secondary/60",
+          ? // Muted: red slash icon + tinted background — clearly distinct.
+            "bg-red-500/10 text-red-500 hover:bg-red-500/20"
+          : playing
+            ? "bg-primary/15 text-primary animate-pulse"
+            : "text-text-tertiary hover:bg-secondary/60 hover:text-text-secondary",
       )}
       data-slot="voice-reply-indicator"
       data-muted={muted ? "true" : "false"}
     >
       {busy ? (
         <Loader2 className="size-4 animate-spin" />
-      ) : muted || !playing ? (
+      ) : muted ? (
         <VolumeX className="size-4" />
       ) : (
         <Volume2 className="size-4" />
