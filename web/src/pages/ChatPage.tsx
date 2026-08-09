@@ -41,6 +41,12 @@ import { useSearchParams } from "react-router";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
 import { ChatInput, type ChatInputHandle } from "@/components/ChatInput";
+import { VoiceReply } from "@/components/VoiceReply";
+import {
+  loadVoiceSettings,
+  saveVoiceSettings,
+  type VoiceSettings as VoiceSettingsT,
+} from "@/lib/voiceMode";
 import { ChatMessageList } from "@/components/ChatMessageList";
 import { ChatUsageBar } from "@/components/ChatUsageBar";
 import { SessionStatusBar } from "@/components/SessionStatusBar";
@@ -244,6 +250,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   );
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Voice mode: settings persisted in localStorage; reply text fed by the
+  // chat event stream when voiceReply is enabled.
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettingsT>(() =>
+    loadVoiceSettings(),
+  );
+  const [voiceReplyText, setVoiceReplyText] = useState("");
+  const [voiceReplyRun, setVoiceReplyRun] = useState(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptRef = useRef(0);
   const forceFreshPtyRef = useRef(false);
@@ -433,6 +446,22 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   // onInputChange, and keys are forwarded through onCompletionKey. The
   // GatewayClient is shared with nothing else — clarify.respond mints its own.
   const [composerText, setComposerText] = useState("");
+
+  // Voice reply: when enabled and an assistant message completes, speak its
+  // final text. Tracked by message id so re-renders don't re-trigger.
+  const lastSpokenMsgRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!voiceSettings.voiceReply) return;
+    const msgs = chatStream.messages;
+    if (!msgs.length) return;
+    const last = msgs[msgs.length - 1];
+    if (!last || last.role !== "assistant" || last.status !== "complete") return;
+    if (!last.text || last.text.length < 2) return;
+    if (lastSpokenMsgRef.current === last.id) return;
+    lastSpokenMsgRef.current = last.id;
+    setVoiceReplyText(last.text);
+    setVoiceReplyRun((r) => r + 1);
+  }, [chatStream.messages, voiceSettings.voiceReply]);
   const slashPopoverRef = useRef<SlashPopoverHandle | null>(null);
   const chatInputRef = useRef<ChatInputHandle | null>(null);
   const completionGw = useMemo(() => new GatewayClient(), []);
@@ -839,6 +868,27 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   useEffect(() => {
     sendChatPromptRef.current = sendChatPrompt;
   }, [sendChatPrompt]);
+
+  // Voice transcript handler: "auto" sends immediately; "confirm" fills the
+  // composer so the user can review/edit before sending.
+  const handleVoiceTranscript = useCallback(
+    (text: string) => {
+      const trimmed = (text ?? "").trim();
+      if (!trimmed) return;
+      if (voiceSettings.sendMode === "auto") {
+        void sendChatPromptRef.current(trimmed);
+      } else {
+        chatInputRef.current?.setValue(trimmed);
+        chatInputRef.current?.focus();
+      }
+    },
+    [voiceSettings.sendMode],
+  );
+
+  const handleVoiceSettingsChange = useCallback((settings: VoiceSettingsT) => {
+    setVoiceSettings(settings);
+    saveVoiceSettings(settings);
+  }, []);
 
   // Stop the running turn (mirrors TUI Ctrl+C → session.interrupt).
   const stopTurn = useCallback(() => {
@@ -2064,10 +2114,21 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
                   onInputChange={setComposerText}
                   onCompletionKey={handleCompletionKey}
                   disabled={ptyState !== "open"}
+                  voiceSettings={voiceSettings}
+                  onVoiceTranscript={handleVoiceTranscript}
+                  onVoiceSettingsChange={handleVoiceSettingsChange}
+                  onVoiceError={(msg) => setBanner(msg)}
                 />
               </div>
             </div>
           )}
+
+          <VoiceReply
+            enabled={voiceSettings.voiceReply}
+            text={voiceReplyText}
+            runId={voiceReplyRun}
+            onError={(msg) => setBanner(msg)}
+          />
 
           {modelPickerOpen && (
             <ModelPickerDialog

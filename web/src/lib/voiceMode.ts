@@ -1,0 +1,302 @@
+/**
+ * voiceMode — Web voice input for the chat view.
+ *
+ * Architecture (independent of the official Hermes voice mode, which is
+ * bound to a server-side microphone):
+ *
+ *   Browser (user's mic) --MediaRecorder--> webm/opus blob
+ *     --base64 data_url--> POST /api/audio/transcribe   (server: faster-whisper)
+ *     <-- transcript text--
+ *     --send as chat message (auto or confirm) --> Hermes replies
+ *
+ * TTS reply:  assistant text --> POST /api/audio/speak --> base64 audio --> <audio>
+ *
+ * Settings are persisted in localStorage so each user keeps their own
+ * preference (voice on/off, send mode, voice reply on/off).
+ */
+
+import { fetchJSON } from "@/lib/api";
+
+// ── Settings ──────────────────────────────────────────────────────────
+
+export type VoiceSendMode = "auto" | "confirm";
+
+export interface VoiceSettings {
+  /** Master switch: whether the voice feature is available at all. */
+  enabled: boolean;
+  /** "auto" = send transcript immediately; "confirm" = fill composer, user presses send. */
+  sendMode: VoiceSendMode;
+  /** When true, assistant replies are spoken aloud via /api/audio/speak. */
+  voiceReply: boolean;
+}
+
+const SETTINGS_KEY = "hermes.voice.settings.v1";
+
+export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
+  enabled: true,
+  sendMode: "auto",
+  voiceReply: false,
+};
+
+export function loadVoiceSettings(): VoiceSettings {
+  try {
+    const raw = window.localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return { ...DEFAULT_VOICE_SETTINGS };
+    const parsed = JSON.parse(raw) as Partial<VoiceSettings>;
+    return {
+      enabled: parsed.enabled ?? DEFAULT_VOICE_SETTINGS.enabled,
+      sendMode: parsed.sendMode === "confirm" ? "confirm" : "auto",
+      voiceReply: parsed.voiceReply ?? DEFAULT_VOICE_SETTINGS.voiceReply,
+    };
+  } catch {
+    return { ...DEFAULT_VOICE_SETTINGS };
+  }
+}
+
+export function saveVoiceSettings(settings: VoiceSettings): void {
+  try {
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    /* localStorage unavailable — settings are session-only */
+  }
+}
+
+// ── Recording (MediaRecorder + VAD) ───────────────────────────────────
+
+export type VoiceRecorderState =
+  | "idle"
+  | "requesting"
+  | "recording"
+  | "transcribing"
+  | "error";
+
+export interface VoiceTranscriptResult {
+  transcript: string;
+  provider: string | null;
+}
+
+/** Silence (VAD) tuning. */
+const VAD_SILENCE_MS = 1200; // continuous silence before auto-stop
+const VAD_RMS_THRESHOLD = 0.01; // below this RMS = silence
+const MAX_RECORDING_MS = 60_000; // hard cap
+
+/**
+ * One-shot recorder: starts getUserMedia + MediaRecorder, watches the
+ * analyser for silence, stops on silence (VAD), then returns the webm blob.
+ * Caller must call stop() to abort early (e.g. component unmount).
+ */
+export class VoiceRecorder {
+  private stream: MediaStream | null = null;
+  private mediaRecorder: MediaRecorder | null = null;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private chunks: Blob[] = [];
+  private silenceTimer: number | null = null;
+  private maxTimer: number | null = null;
+  private rafId: number | null = null;
+  private _onLevel: ((level: number) => void) | null = null;
+  private _onStop: ((blob: Blob, mimeType: string) => void) | null = null;
+  private _onError: ((err: Error) => void) | null = null;
+  private stopped = false;
+
+  constructor(
+    onLevel?: (level: number) => void,
+    onStop?: (blob: Blob, mimeType: string) => void,
+    onError?: (err: Error) => void,
+  ) {
+    this._onLevel = onLevel ?? null;
+    this._onStop = onStop ?? null;
+    this._onError = onError ?? null;
+  }
+
+  async start(): Promise<void> {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("浏览器不支持麦克风访问（需 HTTPS 或 localhost）");
+    }
+    this.stopped = false;
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+
+    // Prefer webm/opus (Chrome/Edge/Firefox); fall back to whatever is available.
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm")
+      ? "audio/webm"
+      : MediaRecorder.isTypeSupported("audio/ogg")
+        ? "audio/ogg"
+        : "";
+    this.mediaRecorder = mimeType
+      ? new MediaRecorder(this.stream, { mimeType })
+      : new MediaRecorder(this.stream);
+    this.chunks = [];
+
+    this.mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) this.chunks.push(e.data);
+    };
+    this.mediaRecorder.onstop = () => {
+      const type = this.mediaRecorder?.mimeType || mimeType || "audio/webm";
+      const blob = new Blob(this.chunks, { type });
+      this.cleanup();
+      // Always transcribe on stop — manual stop (click), VAD auto-stop, and
+      // the max-duration cap all funnel through here. (Do NOT gate on
+      // `this.stopped`: stop() sets it before mediaRecorder.stop() fires this
+      // handler, which would make manual stop silently drop the recording.)
+      this._onStop?.(blob, type);
+    };
+    this.mediaRecorder.onerror = () => {
+      this.stop();
+      this._onError?.(new Error("录音器错误"));
+    };
+
+    this.mediaRecorder.start();
+
+    // VAD via Web Audio AnalyserNode.
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      this.audioContext = new Ctx();
+      const src = this.audioContext.createMediaStreamSource(this.stream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 1024;
+      src.connect(this.analyser);
+      // NOTE: do NOT connect the analyser to audioContext.destination — that
+      // would pipe the mic straight to the speakers (the user hears their own
+      // voice live). AnalyserNode still computes RMS without an output.
+    } catch {
+      // AudioContext may fail without user gesture — recording still works,
+      // we just lose VAD auto-stop (fall back to manual stop via click).
+      this.analyser = null;
+    }
+
+    // Max duration hard cap.
+    this.maxTimer = window.setTimeout(() => {
+      if (this.mediaRecorder?.state === "recording") this.stop();
+    }, MAX_RECORDING_MS);
+
+    this.pollLevel();
+  }
+
+  private pollLevel(): void {
+    if (this.stopped || !this.analyser) return;
+    const data = new Uint8Array(this.analyser.frequencyBinCount);
+    this.analyser.getByteTimeDomainData(data);
+    let sum = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = (data[i] - 128) / 128;
+      sum += v * v;
+    }
+    const rms = Math.sqrt(sum / data.length);
+    this._onLevel?.(rms);
+
+    // Silence detection: once we've had some audio, a long silent gap stops.
+    if (rms < VAD_RMS_THRESHOLD) {
+      if (this.silenceTimer === null) {
+        this.silenceTimer = window.setTimeout(() => {
+          if (this.mediaRecorder?.state === "recording") this.stop();
+        }, VAD_SILENCE_MS);
+      }
+    } else if (this.silenceTimer !== null) {
+      window.clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+
+    this.rafId = window.requestAnimationFrame(() => this.pollLevel());
+  }
+
+  stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    try {
+      this.mediaRecorder?.stop();
+    } catch {
+      /* already stopped */
+    }
+    // If recorder never started (e.g. error mid-start), clean up directly.
+    if (!this.mediaRecorder || this.mediaRecorder.state === "inactive") {
+      this.cleanup();
+    }
+  }
+
+  private cleanup(): void {
+    if (this.silenceTimer !== null) window.clearTimeout(this.silenceTimer);
+    if (this.maxTimer !== null) window.clearTimeout(this.maxTimer);
+    if (this.rafId !== null) window.cancelAnimationFrame(this.rafId);
+    this.silenceTimer = null;
+    this.maxTimer = null;
+    this.rafId = null;
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = null;
+    this.mediaRecorder = null;
+    try {
+      void this.audioContext?.close();
+    } catch {
+      /* ignore */
+    }
+    this.audioContext = null;
+    this.analyser = null;
+  }
+}
+
+// ── API helpers ───────────────────────────────────────────────────────
+
+interface TranscribeResponse {
+  ok: boolean;
+  transcript: string;
+  provider: string | null;
+}
+
+export async function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("读取录音失败"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+/** Send audio to the server's local STT (faster-whisper). */
+export async function transcribeAudio(
+  blob: Blob,
+): Promise<VoiceTranscriptResult> {
+  const dataUrl = await blobToDataUrl(blob);
+  const res = await fetchJSON<TranscribeResponse>("/api/audio/transcribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      data_url: dataUrl,
+      mime_type: blob.type,
+    }),
+  });
+  if (!res.ok) {
+    throw new Error("语音识别失败");
+  }
+  return {
+    transcript: (res.transcript ?? "").trim(),
+    provider: res.provider ?? null,
+  };
+}
+
+interface SpeakResponse {
+  ok: boolean;
+  data_url: string;
+  mime_type: string;
+  provider: string | null;
+}
+
+/** Synthesize assistant text to speech (server-side TTS provider). */
+export async function speakText(text: string): Promise<string> {
+  const res = await fetchJSON<SpeakResponse>("/api/audio/speak", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok || !res.data_url) {
+    throw new Error("语音合成失败");
+  }
+  return res.data_url;
+}

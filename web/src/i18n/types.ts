@@ -237,6 +237,24 @@ export interface Translations {
     stop: string;
   };
 
+  // ── Voice mode (web voice input) ──
+  voice: {
+    startRecording: string;
+    stopRecording: string;
+    transcribing: string;
+    noSpeech: string;
+    settings: string;
+    settingsTitle: string;
+    enableVoice: string;
+    autoSend: string;
+    voiceReply: string;
+    settingsHint: string;
+    replyActive: string;
+    stopReply: string;
+    replyError: string;
+    listening: string;
+  };
+
   // ── Analytics page ──
   analytics: {
     period: string;

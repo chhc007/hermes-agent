@@ -217,6 +217,23 @@ export const zh: Translations = {
     stop: "停止",
   },
 
+  voice: {
+    startRecording: "开始语音输入（说话后自动识别）",
+    stopRecording: "停止录音",
+    transcribing: "识别中…",
+    noSpeech: "未检测到语音，请重试",
+    settings: "语音设置",
+    settingsTitle: "语音模式设置",
+    enableVoice: "启用语音输入",
+    autoSend: "说完自动发送",
+    voiceReply: "语音回复（朗读回复）",
+    settingsHint: "录音在浏览器进行，识别使用服务器本地模型（faster-whisper）。",
+    replyActive: "正在朗读回复，点击停止",
+    stopReply: "停止朗读",
+    replyError: "语音回复失败",
+    listening: "正在聆听…",
+  },
+
   analytics: {
     period: "时间范围：",
     totalTokens: "总 Token 数",

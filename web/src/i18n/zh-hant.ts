@@ -204,6 +204,23 @@ export const zhHant: Translations = {
     stop: "停止",
   },
 
+  voice: {
+    startRecording: "開始語音輸入（說話後自動辨識）",
+    stopRecording: "停止錄音",
+    transcribing: "辨識中…",
+    noSpeech: "未偵測到語音，請重試",
+    settings: "語音設定",
+    settingsTitle: "語音模式設定",
+    enableVoice: "啟用語音輸入",
+    autoSend: "說完自動傳送",
+    voiceReply: "語音回覆（朗讀回覆）",
+    settingsHint: "錄音在瀏覽器進行，辨識使用伺服器本地模型（faster-whisper）。",
+    replyActive: "正在朗讀回覆，點擊停止",
+    stopReply: "停止朗讀",
+    replyError: "語音回覆失敗",
+    listening: "正在聆聽…",
+  },
+
   analytics: {
     period: "時間範圍：",
     totalTokens: "Token 總數",

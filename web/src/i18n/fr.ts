@@ -204,6 +204,23 @@ export const fr: Translations = {
     stop: "Stop",
   },
 
+  voice: {
+    startRecording: "Start voice input (auto-transcribes when you stop talking)",
+    stopRecording: "Stop recording",
+    transcribing: "Transcribing…",
+    noSpeech: "No speech detected, try again",
+    settings: "Voice settings",
+    settingsTitle: "Voice Mode Settings",
+    enableVoice: "Enable voice input",
+    autoSend: "Auto-send when done",
+    voiceReply: "Voice reply (read responses aloud)",
+    settingsHint: "Recording happens in your browser; recognition uses the server's local model (faster-whisper).",
+    replyActive: "Reading reply aloud — click to stop",
+    stopReply: "Stop reading",
+    replyError: "Voice reply failed",
+    listening: "Listening…",
+  },
+
   analytics: {
     period: "Période:",
     totalTokens: "Tokens totaux",

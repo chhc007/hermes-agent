@@ -28,6 +28,9 @@ import {
 import { filesFromTransfer, formatFileSize, transferHasFiles } from "@/lib/chatFileUpload";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
+import { VoiceButton } from "@/components/VoiceButton";
+import { VoiceSettings } from "@/components/VoiceSettings";
+import type { VoiceSettings as VoiceSettingsT } from "@/lib/voiceMode";
 
 /** Stable per-file identity for dedupe (name/type/size/mtime). */
 function fileKey(file: File): string {
@@ -53,6 +56,13 @@ interface ChatInputProps {
    */
   onCompletionKey?: (e: KeyboardEvent<HTMLTextAreaElement>) => boolean;
   className?: string;
+  /** Voice-mode settings (owned by ChatPage). */
+  voiceSettings?: VoiceSettingsT;
+  /** Called when the voice button produces a transcript. */
+  onVoiceTranscript?: (text: string) => void;
+  /** Called when voice settings change. */
+  onVoiceSettingsChange?: (settings: VoiceSettingsT) => void;
+  onVoiceError?: (message: string) => void;
 }
 
 export interface ChatInputHandle {
@@ -66,7 +76,17 @@ export interface ChatInputHandle {
 
 export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
   function ChatInput(
-    { onSend, disabled, onInputChange, onCompletionKey, className },
+    {
+      onSend,
+      disabled,
+      onInputChange,
+      onCompletionKey,
+      className,
+      voiceSettings,
+      onVoiceTranscript,
+      onVoiceSettingsChange,
+      onVoiceError,
+    },
     ref,
   ) {
     const [value, setValue] = useState("");
@@ -270,6 +290,14 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
             </button>
           )}
 
+          {voiceSettings && onVoiceTranscript && (
+            <VoiceButton
+              enabled={voiceSettings.enabled}
+              onTranscript={onVoiceTranscript}
+              onError={onVoiceError}
+            />
+          )}
+
           <button
             type="button"
             onClick={() => void submit()}
@@ -284,6 +312,13 @@ export const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(
           >
             <Send className="size-4" />
           </button>
+
+          {voiceSettings && onVoiceSettingsChange && (
+            <VoiceSettings
+              settings={voiceSettings}
+              onChange={onVoiceSettingsChange}
+            />
+          )}
         </div>
       </div>
     );
