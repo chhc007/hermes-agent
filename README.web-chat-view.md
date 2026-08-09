@@ -634,7 +634,14 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.8.3**（当前，稳定）：**停止按钮并入发送按钮（ChatGPT 风格）** — agent
+- **v1.8.4**（当前，稳定）：**语音设置弹窗改为中央弹窗** — 旧的绝对定位
+  popover 在 PC 端会溢出视口（只显示一半，跑到左边），v1.7.32 的视口 clamp
+  也压不住。改为 fixed 居中 modal：`flex items-center justify-center` +
+  半透明遮罩 + 右上角 ✕ + Esc 关闭；点击遮罩关闭、点面板内部不关闭；
+  宽度 `max-w-sm` 手机窄屏自适应。新增 i18n key `settingsClose`（可选）。
+  改动：`VoiceSettings.tsx` + `VoiceSettings.test.tsx`（删旧 clamp 测试，
+  新增 3 个 modal 行为测试）+ `i18n/{types,en,zh}.ts`。测试 407 passed。
+- **v1.8.3**（稳定）：**停止按钮并入发送按钮（ChatGPT 风格）** — agent
   运行时（`meta.running`）发送按钮变为红色方块停止按钮，点击调
   `session.interrupt` 停止当前回合；停止后立即恢复发送按钮。输入框运行中
   不禁用，可随时打字 Enter 发送新消息打断（barge-in）。工具条上的独立
