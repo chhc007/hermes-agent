@@ -849,6 +849,33 @@ describe("compaction status (status.update compacting/compressing)", () => {
     expect(state.compacting).toBe(false);
   });
 
+  it("clears compacting on kind=compacted (auto-compaction terminal edge)", () => {
+    // Backend: conversation_compression._emit_compaction_done →
+    // status_callback("compacted", COMPACTION_DONE_STATUS) → status.update
+    // with kind="compacted". Before the fix the banner stayed up forever.
+    const state = reduce([
+      ["status.update", { kind: "compacting", text: "🗜️ Compacting context…" }],
+      [
+        "status.update",
+        { kind: "compacted", text: "✓ Context compaction complete — continuing turn..." },
+      ],
+    ]);
+    expect(state.compacting).toBe(false);
+  });
+
+  it("clears compacting when the session switches (compaction rotates key)", () => {
+    const state = reduce([
+      ["session.info", { stored_session_id: "sess-old", title: "before compact" }],
+      ["status.update", { kind: "compacting", text: "🗜️ Compacting context…" }],
+      [
+        "session.info",
+        { stored_session_id: "sess-new", title: "after compact" },
+      ],
+    ]);
+    expect(state.compacting).toBe(false);
+    expect(state.activeSessionId).toBe("sess-new");
+  });
+
   it("ignores unrelated status.update kinds", () => {
     const state = reduce([
       ["status.update", { kind: "working", text: "working…" }],

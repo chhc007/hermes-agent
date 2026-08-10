@@ -1888,6 +1888,31 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     };
   }, [isActive]);
 
+  // Same refit problem for the internal chat ↔ terminal toggle: the xterm
+  // host is `hidden` while the bubble view is active (display:none →
+  // clientWidth/Height = 0, so syncTerminalMetrics bails), and switching to
+  // the Terminal tab is a style-driven visibility change that ResizeObserver
+  // does NOT fire for. Without this, the very first switch after mount (or
+  // after a refresh) renders the grid at the stale/0×0 size — content runs
+  // past the bottom edge until the user toggles away and back. Refit after
+  // two animation frames so layout has committed to the now-visible host.
+  useEffect(() => {
+    if (activeView !== "terminal" || !isActive) return;
+    let raf1 = 0;
+    let raf2 = 0;
+    raf1 = requestAnimationFrame(() => {
+      raf1 = 0;
+      raf2 = requestAnimationFrame(() => {
+        raf2 = 0;
+        syncMetricsRef.current?.();
+      });
+    });
+    return () => {
+      if (raf1) cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }, [activeView, isActive]);
+
   const maybeReconnectOnPageResume = useCallback(() => {
     const visibilityState =
       typeof document !== "undefined" ? document.visibilityState : "visible";

@@ -476,9 +476,11 @@ export function chatEventStreamReducer(
         messages: switched ? [] : state.messages,
         clarify: switched ? null : state.clarify,
         // A session switch resets subagent/todo state belonging to the old
-        // conversation.
+        // conversation. Compaction also rotates the session key, so a
+        // switched session can never be "mid-compaction" for the new one.
         subagents: switched ? [] : state.subagents,
         todos: switched ? [] : state.todos,
+        compacting: switched ? false : state.compacting,
       };
     }
 
@@ -535,13 +537,18 @@ export function chatEventStreamReducer(
     // Compact / auto-compaction status. The gateway re-tags lifecycle
     // compaction statuses as "compacting" (server.py::_status_update) and
     // manual /compress emits "compressing" (methods_session.py). Both drive
-    // the in-chat banner; "ready" (or any other kind) clears it.
+    // the in-chat banner. Cleared by the terminal edges: manual /compress
+    // always emits kind="ready" (methods_session.py finally block), while
+    // AUTO-compaction emits kind="compacted"
+    // (conversation_compression.py::_emit_compaction_done →
+    // status_callback("compacted", …)). Without handling "compacted" the
+    // banner would stay up forever after an automatic compression.
     case "status.update": {
       const kind = asString(p.kind);
       if (kind === "compacting" || kind === "compressing") {
         return { ...state, compacting: true };
       }
-      if (kind === "ready") {
+      if (kind === "ready" || kind === "compacted") {
         return { ...state, compacting: false };
       }
       return state;

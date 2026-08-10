@@ -634,7 +634,24 @@ npm run build --workspace web
 
 ## 📦 版本
 
-- **v1.8.4**（当前，稳定）：**语音设置弹窗改为中央弹窗** — 旧的绝对定位
+- **v1.8.5**（当前，稳定）：**终端溢出修复 + 压缩 banner 卡死修复** —
+  ① Chat↔Terminal 切换后终端内容超出下边界：根因是 `syncMetricsRef`
+  只在页面级 `isActive` 变化时 refit，内部 `activeView` 切换（chat→
+  terminal）后 xterm host 从 `display:none` 变为可见，ResizeObserver 对
+  这种 style 驱动盒子变化不触发，首次切换/刷新后首次切换渲染的还是
+  隐藏时的 stale/0×0 尺寸。修复：新增 `[activeView, isActive]` effect，
+  切到 terminal 时双 rAF 后强制 `syncMetricsRef.current?.()`。
+  ② 自动压缩（auto-compaction）结束后「正在压缩上下文」banner 不消失：
+  根因是后端压缩完成发 `status.update` kind=`compacted`
+  （`conversation_compression._emit_compaction_done` →
+  `status_callback("compacted", …)`），而 reducer 只认 `ready` 清除。
+  修复：`kind === "ready" || kind === "compacted"` 均清除；另加双保险
+  ——session 切换（压缩后 session key 旋转 → stored_session_id 变化）
+  时重置 `compacting: false`。改动：`ChatPage.tsx` + `chat-event-stream.ts`
+  + `chat-event-stream.test.ts`（新增 3 测试：compacted 清除、session
+  切换清除、原 unrelated 保留）。测试 407 passed（chat-event-stream
+  75/75）。纯前端，刷新浏览器即可生效。
+- **v1.8.4**（稳定）：**语音设置弹窗改为中央弹窗** — 旧的绝对定位
   popover 在 PC 端会溢出视口（只显示一半，跑到左边），v1.7.32 的视口 clamp
   也压不住。改为 fixed 居中 modal：`flex items-center justify-center` +
   半透明遮罩 + 右上角 ✕ + Esc 关闭；点击遮罩关闭、点面板内部不关闭；
