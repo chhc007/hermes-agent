@@ -648,9 +648,9 @@ npm run build --workspace web
   修复：`kind === "ready" || kind === "compacted"` 均清除；另加双保险
   ——session 切换（压缩后 session key 旋转 → stored_session_id 变化）
   时重置 `compacting: false`。改动：`ChatPage.tsx` + `chat-event-stream.ts`
-  + `chat-event-stream.test.ts`（新增 3 测试：compacted 清除、session
-  切换清除、原 unrelated 保留）。测试 407 passed（chat-event-stream
-  75/75）。纯前端，刷新浏览器即可生效。
+  + `chat-event-stream.test.ts`（新增 2 测试：compacted 清除、session
+  切换清除）。测试 409 passed（chat-event-stream 75/75）。纯前端，
+  刷新浏览器即可生效。
 - **v1.8.4**（稳定）：**语音设置弹窗改为中央弹窗** — 旧的绝对定位
   popover 在 PC 端会溢出视口（只显示一半，跑到左边），v1.7.32 的视口 clamp
   也压不住。改为 fixed 居中 modal：`flex items-center justify-center` +
