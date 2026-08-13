@@ -25,13 +25,18 @@ import "@xterm/xterm/css/xterm.css";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Typography } from "@nous-research/ui/ui/components/typography/index";
 import { cn } from "@/lib/utils";
-import { Copy, PanelRight, RotateCcw, X } from "lucide-react";
+import { Copy, PanelRight, RotateCcw, Settings, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router";
 
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
+import {
+  loadTerminalAppearance,
+  TerminalSettingsModal,
+  type TerminalAppearance,
+} from "@/components/TerminalSettingsModal";
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
@@ -285,6 +290,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const [mobilePanelOpenRaw, setMobilePanelOpenRaw] = useState(false);
   const mobilePanelOpen = isActive && mobilePanelOpenRaw;
   const { setEnd, setTitle } = usePageHeader();
+  // User-customised terminal appearance (persisted in localStorage) — applied
+  // to the xterm instance on create and on every settings-save.
+  const [terminalAppearance, setTerminalAppearance] = useState<TerminalAppearance>(
+    () => loadTerminalAppearance(),
+  );
+  const [terminalSettingsOpen, setTerminalSettingsOpen] = useState(false);
   const [sessionTitleState, setSessionTitleState] = useState<{
     scope: string;
     title: string | null;
@@ -428,29 +439,64 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     // effect has already filled the slot, so even a "defensive"
     // setEnd(null) here wipes that page's header buttons (Cron "Create",
     // Profiles "Build", …). Ownership rule: only write to the slot while
-    // /chat is the active route AND the narrow layout needs the button;
-    // the effect cleanup handles removal on every transition out.
-    if (!isActive || !narrow) return;
+    // /chat is the active route; the effect cleanup handles removal on
+    // every transition out.
+    if (!isActive) return;
     setEnd(
-      <Button
-        ghost
-        onClick={() => setMobilePanelOpenRaw(true)}
-        aria-expanded={mobilePanelOpen}
-        aria-controls="chat-side-panel"
-        className={cn(
-          "shrink-0 rounded border border-current/20",
-          "px-2 py-1 text-xs font-medium tracking-wide",
-          "text-text-secondary hover:text-midground hover:bg-midground/5",
+      <div className="flex items-center gap-1.5">
+        <Button
+          ghost
+          size="icon"
+          onClick={() => setTerminalSettingsOpen(true)}
+          aria-label="Terminal appearance settings"
+          title="Terminal appearance"
+          className="shrink-0 text-text-secondary hover:text-midground"
+        >
+          <Settings className="h-3.5 w-3.5" />
+        </Button>
+        {narrow && (
+          <Button
+            ghost
+            onClick={() => setMobilePanelOpenRaw(true)}
+            aria-expanded={mobilePanelOpen}
+            aria-controls="chat-side-panel"
+            className={cn(
+              "shrink-0 rounded border border-current/20",
+              "px-2 py-1 text-xs font-medium tracking-wide",
+              "text-text-secondary hover:text-midground hover:bg-midground/5",
+            )}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <PanelRight className="h-3 w-3 shrink-0" />
+              {modelToolsLabel}
+            </span>
+          </Button>
         )}
-      >
-        <span className="inline-flex items-center gap-1.5">
-          <PanelRight className="h-3 w-3 shrink-0" />
-          {modelToolsLabel}
-        </span>
-      </Button>,
+      </div>,
     );
     return () => setEnd(null);
   }, [isActive, narrow, mobilePanelOpen, modelToolsLabel, setEnd]);
+
+  // Terminal appearance save: update state (modal initial values) and apply
+  // live to the running xterm instance without tearing down the PTY.
+  const handleApplyTerminalAppearance = useCallback(
+    (appearance: TerminalAppearance) => {
+      setTerminalAppearance(appearance);
+      const term = termRef.current;
+      if (!term) return;
+      term.options.theme = {
+        ...buildTerminalTheme(terminalBg, terminalFg),
+        background: appearance.background,
+        foreground: appearance.foreground,
+      };
+      term.options.fontSize = appearance.fontSize;
+      // Re-fit so the cols/rows sent to the PTY track the new font metrics.
+      requestAnimationFrame(() => {
+        fitRef.current?.fit();
+      });
+    },
+    [terminalBg, terminalFg],
+  );
 
   const handleCopyLast = () => {
     const ws = wsRef.current;
@@ -491,12 +537,23 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     }
 
     const tierW0 = terminalTierWidthPx(host);
+    // User-customised appearance (from localStorage) wins over theme defaults.
+    // Read fresh here (not from state) so a reconnect rebuild picks up the
+    // latest saved values without the effect re-firing on every save.
+    const savedAppearance = loadTerminalAppearance();
+    const baseFontSize = terminalFontSizeForWidth(tierW0);
+    const fontSize = savedAppearance.fontSize || baseFontSize;
+    const customTheme = {
+      ...buildTerminalTheme(terminalBg, terminalFg),
+      background: savedAppearance.background || terminalBg,
+      foreground: savedAppearance.foreground || terminalFg,
+    };
     const term = new Terminal({
       allowProposedApi: true,
       cursorBlink: true,
       fontFamily:
         "'JetBrains Mono', 'Cascadia Mono', 'Fira Code', 'MesloLGS NF', 'Source Code Pro', Menlo, Consolas, 'DejaVu Sans Mono', monospace",
-      fontSize: terminalFontSizeForWidth(tierW0),
+      fontSize,
       lineHeight: terminalLineHeightForWidth(tierW0),
       letterSpacing: 0,
       fontWeight: "400",
@@ -516,7 +573,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       // Browser-embedded chat runs the TUI in inline mode. Keep transcript
       // history in xterm.js so the browser wheel can scroll it directly.
       scrollback: 5000,
-      theme: terminalTheme,
+      theme: customTheme,
     });
     termRef.current = term;
 
@@ -1546,6 +1603,13 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <PluginSlot name="chat:top" />
       {mobileModelToolsPortal}
+
+      <TerminalSettingsModal
+        open={terminalSettingsOpen}
+        initial={terminalAppearance}
+        onClose={() => setTerminalSettingsOpen(false)}
+        onApply={handleApplyTerminalAppearance}
+      />
 
       {visibleBanner && (
         <div className="border border-warning/50 bg-warning/10 text-warning px-3 py-2 text-xs tracking-wide">
