@@ -128,6 +128,115 @@ function generateChannelId(scope?: string): string {
 const DEFAULT_TERMINAL_BACKGROUND = "#000000";
 const DEFAULT_TERMINAL_FOREGROUND = "#f0e6d2";
 
+/** Parse #rrggbb → [r,g,b] 0-255. Returns null for anything else. */
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
+}
+
+/** [r,g,b] 0-255 → #rrggbb */
+function rgbToHex(r: number, g: number, b: number): string {
+  const c = (v: number) =>
+    Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, "0");
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+/**
+ * Build an ANSI 16-colour palette that is *derived from* the foreground
+ * colour instead of the default terminal palette. The TUI paints lots of
+ * coloured text (cyan/status, green/success, yellow/warn, magenta/tools,
+ * dim/red/error); when the user customises the text colour they expect those
+ * to move with it, not stay at the default palette. We tint the standard
+ * ANSI slots toward the custom foreground hue while keeping enough
+ * saturation/brightness contrast that the semantics (green=ok, red=error…)
+ * survive:
+ *   - bright slots: foreground colour at ~55%/65%/75%/90% lightness
+ *   - dark slots:  muted versions of the same hue
+ * If the foreground isn't a parseable hex we fall back to the xterm defaults.
+ */
+function ansiPaletteFromForeground(foreground: string): Record<string, string> {
+  const rgb = hexToRgb(foreground);
+  if (!rgb) return {};
+
+  // Convert to HSL quickly — only the hue (h) feeds the generated palette;
+  // lightness/saturation of each slot are set explicitly per ANSI slot.
+  const [r, g, b] = rgb.map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  const d = max - min;
+  if (d !== 0) {
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+  }
+
+  const hsl = (hl: number, sl: number) =>
+    rgbToHex(...hslToRgb(h, Math.max(0, Math.min(1, sl)), hl));
+  // Dark 8: descending lightness, muted saturation.
+  const dark = [
+    hsl(0.08, 0.25), // black (dim)
+    hsl(0.5, 0.65), // red
+    hsl(0.52, 0.6), // green
+    hsl(0.55, 0.62), // yellow
+    hsl(0.42, 0.7), // blue
+    hsl(0.47, 0.62), // magenta
+    hsl(0.48, 0.58), // cyan
+    hsl(0.4, 0.35), // white (plain text)
+  ];
+  // Bright 8: brighter, more saturated versions.
+  const bright = [
+    hsl(0.18, 0.35),
+    hsl(0.6, 0.75),
+    hsl(0.62, 0.7),
+    hsl(0.65, 0.72),
+    hsl(0.52, 0.8),
+    hsl(0.57, 0.72),
+    hsl(0.58, 0.68),
+    hsl(0.7, 0.65),
+  ];
+  return {
+    black: dark[0],
+    red: dark[1],
+    green: dark[2],
+    yellow: dark[3],
+    blue: dark[4],
+    magenta: dark[5],
+    cyan: dark[6],
+    white: dark[7],
+    brightBlack: bright[0],
+    brightRed: bright[1],
+    brightGreen: bright[2],
+    brightYellow: bright[3],
+    brightBlue: bright[4],
+    brightMagenta: bright[5],
+    brightCyan: bright[6],
+    brightWhite: bright[7],
+  };
+}
+
+/** HSL (h 0-360, s/l 0-1) → [r,g,b] 0-255. */
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let rgb: [number, number, number];
+  if (h < 60) rgb = [c, x, 0];
+  else if (h < 120) rgb = [x, c, 0];
+  else if (h < 180) rgb = [0, c, x];
+  else if (h < 240) rgb = [0, x, c];
+  else if (h < 300) rgb = [x, 0, c];
+  else rgb = [c, 0, x];
+  return [
+    Math.round((rgb[0] + m) * 255),
+    Math.round((rgb[1] + m) * 255),
+    Math.round((rgb[2] + m) * 255),
+  ];
+}
+
 function buildTerminalTheme(background: string, foreground: string) {
   return {
     background,
@@ -136,6 +245,7 @@ function buildTerminalTheme(background: string, foreground: string) {
     cursorAccent: background,
     selectionBackground:
       foreground.length === 7 ? `${foreground}44` : foreground,
+    ...ansiPaletteFromForeground(foreground),
   };
 }
 
@@ -1947,7 +2057,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         <div
           className={cn(
             "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg",
-            "p-2 sm:p-3",
+            // Mobile: edge-to-edge — no side padding, every pixel for the
+            // terminal. Desktop keeps the padded "terminal window" look.
+            "p-0 sm:p-3",
           )}
           style={{
             backgroundColor: terminalBg,
