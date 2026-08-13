@@ -511,6 +511,10 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   }
   const [terminalUsage, setTerminalUsage] = useState<UsageInfo | null>(null);
   useEffect(() => {
+    // Channel (session) switch: drop the previous session's usage immediately
+    // so the bar never shows stale numbers while the new session is idle or
+    // mid-turn. session.info frames for the new session will repopulate it.
+    setTerminalUsage(null);
     if (!isActive || !channel) return;
     let disposed = false;
     let ws: WebSocket | null = null;
