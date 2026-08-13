@@ -59,6 +59,13 @@ interface SessionInfo {
   provider?: string;
   credential_warning?: string;
   title?: string;
+  usage?: {
+    context_used?: number;
+    context_max?: number;
+    context_percent?: number;
+    total?: number;
+    compressions?: number;
+  };
 }
 
 interface RpcEnvelope {
@@ -450,6 +457,28 @@ export function ChatSidebar({
   const modelLabel = modelName.split("/").slice(-1)[0] ?? "—";
   const banner = error ?? info.credential_warning ?? null;
 
+  // Live context-window usage (from session.info.usage). Compact enough for
+  // the narrow mobile panel: a thin fill bar + `123k/1M tok` readout, with
+  // the compression chip only when it has happened.
+  const usage = info.usage;
+  const hasGauge = Boolean(usage?.context_max && usage?.context_used != null);
+  const fmtK = (n: number): string => {
+    if (!Number.isFinite(n) || n <= 0) return "0";
+    const abs = Math.abs(n);
+    if (abs >= 1_000_000) return `${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}m`;
+    if (abs >= 1_000) return `${(n / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}k`;
+    return String(Math.round(n));
+  };
+  const usageLabel = hasGauge
+    ? `${fmtK(usage!.context_used ?? 0)}/${fmtK(usage!.context_max ?? 0)} tok`
+    : (usage?.total ?? 0) > 0
+      ? `${fmtK(usage!.total ?? 0)} tok`
+      : null;
+  const usagePct =
+    hasGauge && usage?.context_percent != null
+      ? Math.max(0, Math.min(100, usage.context_percent))
+      : 0;
+
   return (
     <aside
       className={cn(
@@ -486,6 +515,45 @@ export function ChatSidebar({
           {STATE_LABEL[state]}
         </Badge>
       </Card>
+
+      {usageLabel && (
+        <Card className="flex min-w-0 items-center gap-2 px-3 py-1.5">
+          {hasGauge && (
+            <div
+              className="relative h-1 w-10 shrink-0 overflow-hidden rounded-full bg-secondary/40 sm:w-16"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(usagePct)}
+              aria-label={usageLabel}
+              title="Context window usage"
+            >
+              <div
+                className={cn(
+                  "absolute inset-y-0 left-0 rounded-full transition-[width] duration-500",
+                  usagePct >= 90
+                    ? "bg-destructive"
+                    : usagePct >= 70
+                      ? "bg-warning"
+                      : "bg-primary/70",
+                )}
+                style={{ width: `${usagePct}%` }}
+              />
+            </div>
+          )}
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] tabular-nums text-text-tertiary">
+            {usageLabel}
+          </span>
+          {(usage?.compressions ?? 0) > 0 && (
+            <span
+              className="inline-flex shrink-0 items-center rounded border border-border/60 bg-secondary/30 px-1 py-0.5 text-[10px] leading-none text-text-tertiary"
+              title="Context compressions"
+            >
+              🗜️×{usage?.compressions}
+            </span>
+          )}
+        </Card>
+      )}
 
       {supportsReasoning && (
         <Card className="py-0">
