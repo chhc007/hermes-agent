@@ -1290,7 +1290,11 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         return;
       }
       const w = terminalTierWidthPx(host);
-      const nextSize = terminalFontSizeForWidth(w);
+      // Respect a user-customised font size: once the terminal appearance
+      // settings save a size, the auto-tiering below must not clobber it on
+      // every resize. Only the default (unset) path tracks the width tiers.
+      const appearance = loadTerminalAppearance();
+      const nextSize = appearance.fontSize || terminalFontSizeForWidth(w);
       const nextLh = terminalLineHeightForWidth(w);
       const fontChanged =
         term.options.fontSize !== nextSize ||
@@ -1883,10 +1887,18 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
 
   // Keep the live xterm theme in sync when the active theme's terminal
   // colors change (e.g. user switches to a custom YAML theme mid-session).
+  // Merge in the user's customised appearance so a theme switch doesn't
+  // clobber their saved background/foreground/font size.
   useEffect(() => {
     const term = termRef.current;
     if (!term) return;
-    term.options.theme = terminalTheme;
+    const appearance = loadTerminalAppearance();
+    term.options.theme = {
+      ...terminalTheme,
+      background: appearance.background || terminalTheme.background,
+      foreground: appearance.foreground || terminalTheme.foreground,
+    };
+    if (appearance.fontSize) term.options.fontSize = appearance.fontSize;
   }, [terminalTheme]);
 
   // Layout:
