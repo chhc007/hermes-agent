@@ -523,12 +523,15 @@ export default function App() {
         <PluginSlot name="backdrop" />
       </div>
 
+      {!isChatRoute && (
       <header
         className={cn(
           // Mobile brand bar: keep it slim — the page header below already
           // shows the session title, so 2 stacked bars (brand + title) eat
           // most of the small viewport. min-h-11 + tighter padding reclaims
-          // ~12px on phones without dropping anything.
+          // ~12px on phones without dropping anything. Hidden on the chat
+          // route entirely: the chat page header hosts the hamburger next to
+          // the conversation title (one slim row instead of two).
           "lg:hidden fixed top-0 left-0 right-0 z-40 min-h-11",
           "flex items-center gap-2 px-4 py-1.5",
           "border-b border-current/20",
@@ -556,6 +559,7 @@ export default function App() {
           {t.app.brand}
         </Typography>
       </header>
+      )}
 
       {mobileOpen && (
         <Button
@@ -572,7 +576,15 @@ export default function App() {
       <PluginSlot name="header-banner" />
       <ProfileScopeBanner />
 
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden pt-11 lg:pt-0">
+      <div
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden lg:pt-0",
+          // Chat route has no mobile brand bar (hamburger lives in the page
+          // header), so no top padding is needed on phones. Other routes keep
+          // pt-11 to clear the fixed brand bar.
+          isChatRoute ? "pt-0" : "pt-11",
+        )}
+      >
         <div className="flex min-h-0 min-w-0 flex-1">
           <aside
             id="app-sidebar"
@@ -748,7 +760,10 @@ export default function App() {
             </div>
           </aside>
 
-          <PageHeaderProvider pluginTabs={pluginTabMeta}>
+          <PageHeaderProvider
+            pluginTabs={pluginTabMeta}
+            onOpenMobileNav={() => setMobileOpen(true)}
+          >
             <div
               className={cn(
                 "relative z-2 flex min-w-0 min-h-0 flex-1 flex-col",

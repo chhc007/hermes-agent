@@ -1,5 +1,7 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation } from "react-router";
+import { Button } from "@nous-research/ui/ui/components/button";
+import { Menu } from "lucide-react";
 import { PageHeaderContext } from "./page-header-context";
 import { resolvePageTitle } from "@/lib/resolve-page-title";
 import { cn } from "@/lib/utils";
@@ -8,9 +10,13 @@ import { useI18n } from "@/i18n";
 export function PageHeaderProvider({
   children,
   pluginTabs,
+  onOpenMobileNav,
 }: {
   children: ReactNode;
   pluginTabs: { path: string; label: string }[];
+  /** Opens the mobile nav drawer (chat route hides the global brand bar, so
+   *  the hamburger lives here next to the conversation title). */
+  onOpenMobileNav?: () => void;
 }) {
   const { pathname } = useLocation();
   const { t } = useI18n();
@@ -83,6 +89,17 @@ export function PageHeaderProvider({
                     : "flex-row items-center",
               )}
             >
+              {isChatRoute && onOpenMobileNav && (
+                <Button
+                  ghost
+                  size="icon"
+                  onClick={onOpenMobileNav}
+                  aria-label={t.app.openNavigation}
+                  className="lg:hidden shrink-0 text-text-secondary hover:text-midground"
+                >
+                  <Menu />
+                </Button>
+              )}
               <h1
                 className={cn(
                   "font-expanded min-w-0 text-sm font-bold tracking-[0.08em] text-midground",
