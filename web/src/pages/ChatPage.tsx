@@ -834,6 +834,77 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       };
     }
 
+    // ── Mobile touch scrolling ─────────────────────────────────────────
+    // xterm.js registers document-level touch listeners for its selection
+    // gesture, and once a gesture is dispatched it preventDefault()s the
+    // move — so on phones the transcript doesn't scroll at all (or only
+    // scrolls the xterm viewport by tiny amounts). We install our own
+    // touch handling on the host: a single-finger drag scrolls the xterm
+    // buffer via scrollLines() and stops propagation so xterm's selection
+    // gesture never swallows the move. A tap (negligible movement) is
+    // left alone so xterm still focuses its hidden textarea for typing.
+    let touchScrollCleanup: (() => void) | null = null;
+    if (typeof window !== "undefined" && "ontouchstart" in window) {
+      let touchStartY = 0;
+      let touchLastY = 0;
+      let touchActive = false;
+      let touchMoved = false;
+
+      const onTouchStart = (ev: TouchEvent) => {
+        if (ev.touches.length !== 1) return;
+        touchStartY = ev.touches[0].clientY;
+        touchLastY = touchStartY;
+        touchActive = true;
+        touchMoved = false;
+      };
+
+      const onTouchMove = (ev: TouchEvent) => {
+        if (!touchActive || ev.touches.length !== 1) return;
+        const y = ev.touches[0].clientY;
+        const delta = touchLastY - y;
+        touchLastY = y;
+
+        // Only claim the gesture once movement exceeds a small threshold —
+        // pure taps must still reach xterm (focus + typing).
+        if (!touchMoved && Math.abs(y - touchStartY) < 8) return;
+        touchMoved = true;
+
+        // Scroll a line per ~24px of drag, matching the desktop wheel feel.
+        const step = Math.max(1, Math.round(Math.abs(delta) / 24));
+        term.scrollLines(delta > 0 ? step : -step);
+        ev.preventDefault();
+        ev.stopPropagation();
+      };
+
+      const onTouchEnd = () => {
+        touchActive = false;
+        // Intentionally keep `touchMoved` set: the browser fires a click
+        // event AFTER touchend, and onClickSuppress reads it to swallow that
+        // synthetic click. It is cleared there (or by the next touchstart).
+      };
+
+      // After a drag-scroll, a click event fires on release; swallow it so
+      // the scroll gesture doesn't also focus the terminal / move the cursor.
+      const onClickSuppress = (ev: MouseEvent) => {
+        if (touchMoved) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          touchMoved = false;
+        }
+      };
+
+      host.addEventListener("touchstart", onTouchStart, { passive: true });
+      host.addEventListener("touchmove", onTouchMove, { passive: false });
+      host.addEventListener("touchend", onTouchEnd, { passive: true });
+      host.addEventListener("click", onClickSuppress, { capture: true });
+      touchScrollCleanup = () => {
+        host.removeEventListener("touchstart", onTouchStart);
+        host.removeEventListener("touchmove", onTouchMove);
+        host.removeEventListener("touchend", onTouchEnd);
+        host.removeEventListener("click", onClickSuppress, { capture: true });
+      };
+    }
+
     // WebGL draws from a texture atlas sized with device pixels. On phones and
     // in DevTools device mode that often produces *visually* much larger cells
     // than `fontSize` suggests — users see "huge" text even at 7–9px settings.
@@ -1335,6 +1406,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       onDataDisposable?.dispose();
       onResizeDisposable?.dispose();
       mobileInputCleanup?.();
+      touchScrollCleanup?.();
       host.removeEventListener("paste", handleBrowserPaste, true);
       host.removeEventListener("dragover", handleBrowserDragOver, true);
       host.removeEventListener("drop", handleBrowserDrop, true);
