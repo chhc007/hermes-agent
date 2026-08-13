@@ -113,24 +113,69 @@ export function TerminalSettingsModal({
   const [fontSize, setFontSize] = useState(initial.fontSize);
   const [saved, setSaved] = useState(false);
 
-  // Re-seed the form when the modal opens with a different initial value.
+  // Seed the form when the modal opens. Deliberately NOT re-run on `initial`
+  // changes: live preview (onApply) updates `initial` on every keystroke, and
+  // re-seeding would wipe the user's in-progress typing.
   useEffect(() => {
     if (!open) return;
     setBgText(initial.background);
     setFgText(initial.foreground);
     setFontSize(initial.fontSize);
     setSaved(false);
-  }, [open, initial]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const bgHex = normalizeHex(bgText);
   const fgHex = normalizeHex(fgText);
   const valid = bgHex !== null && fgHex !== null;
 
+  // Build the current form value (only valid when both colours parse).
+  const buildAppearance = (): TerminalAppearance | null => {
+    if (!valid) return null;
+    return {
+      background: bgHex!,
+      foreground: fgHex!,
+      fontSize: Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(fontSize))),
+    };
+  };
+
+  // Live preview: apply colour/font changes to the terminal immediately while
+  // the modal is open — the user sees the effect without hitting Save first.
+  // Takes the in-flight input values directly (setState is async, so reading
+  // state right after an onChange would preview the previous value).
+  const previewAppearance = useCallback(
+    (next: { background?: string; foreground?: string; fontSize?: number }) => {
+      const bg = normalizeHex(next.background ?? bgText);
+      const fg = normalizeHex(next.foreground ?? fgText);
+      const size = next.fontSize ?? fontSize;
+      if (!bg || !fg) return;
+      onApply({
+        background: bg,
+        foreground: fg,
+        fontSize: Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(size))),
+      });
+    },
+    [bgText, fgText, fontSize, onApply],
+  );
+
+  // Auto-save on any close path (Save button, ✕, scrim, Escape) so changing
+  // a colour and dismissing the modal never loses the value. Save just adds
+  // the explicit "saved" feedback + a short delay.
+  const persistAndClose = useCallback(() => {
+    const appearance = buildAppearance();
+    if (appearance) {
+      saveTerminalAppearance(appearance);
+      onApply(appearance);
+    }
+    onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgText, fgText, fontSize, valid, onClose, onApply]);
+
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") persistAndClose();
     },
-    [onClose],
+    [persistAndClose],
   );
   useEffect(() => {
     if (!open) return;
@@ -141,12 +186,8 @@ export function TerminalSettingsModal({
   if (!open) return null;
 
   const handleSave = () => {
-    if (!valid) return;
-    const appearance: TerminalAppearance = {
-      background: bgHex!,
-      foreground: fgHex!,
-      fontSize: Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(fontSize))),
-    };
+    const appearance = buildAppearance();
+    if (!appearance) return;
     saveTerminalAppearance(appearance);
     onApply(appearance);
     setSaved(true);
@@ -165,7 +206,7 @@ export function TerminalSettingsModal({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
+      onClick={persistAndClose}
       role="dialog"
       aria-modal="true"
       aria-label="Terminal appearance settings"
@@ -180,7 +221,7 @@ export function TerminalSettingsModal({
           </span>
           <button
             type="button"
-            onClick={onClose}
+            onClick={persistAndClose}
             aria-label="Close terminal settings"
             className="rounded p-1 text-text-tertiary hover:bg-secondary/60 hover:text-text-secondary"
           >
@@ -202,14 +243,20 @@ export function TerminalSettingsModal({
             <input
               type="color"
               value={bgHex ?? "#000000"}
-              onChange={(e) => setBgText(e.target.value)}
+              onChange={(e) => {
+                setBgText(e.target.value);
+                previewAppearance({ background: e.target.value });
+              }}
               className="h-8 w-10 shrink-0 cursor-pointer rounded border border-border/60 bg-transparent p-0.5"
               aria-label="Background colour picker"
             />
             <input
               type="text"
               value={bgText}
-              onChange={(e) => setBgText(e.target.value)}
+              onChange={(e) => {
+                setBgText(e.target.value);
+                previewAppearance({ background: e.target.value });
+              }}
               placeholder="#000000"
               className={cn(
                 "min-w-0 flex-1 rounded border bg-transparent px-2 py-1 font-mono text-xs outline-none",
@@ -253,14 +300,20 @@ export function TerminalSettingsModal({
             <input
               type="color"
               value={fgHex ?? "#f0e6d2"}
-              onChange={(e) => setFgText(e.target.value)}
+              onChange={(e) => {
+                setFgText(e.target.value);
+                previewAppearance({ foreground: e.target.value });
+              }}
               className="h-8 w-10 shrink-0 cursor-pointer rounded border border-border/60 bg-transparent p-0.5"
               aria-label="Text colour picker"
             />
             <input
               type="text"
               value={fgText}
-              onChange={(e) => setFgText(e.target.value)}
+              onChange={(e) => {
+                setFgText(e.target.value);
+                previewAppearance({ foreground: e.target.value });
+              }}
               placeholder="#f0e6d2"
               className={cn(
                 "min-w-0 flex-1 rounded border bg-transparent px-2 py-1 font-mono text-xs outline-none",
@@ -304,7 +357,10 @@ export function TerminalSettingsModal({
             max={FONT_MAX}
             step={1}
             value={fontSize}
-            onChange={(e) => setFontSize(Number(e.target.value))}
+            onChange={(e) => {
+              setFontSize(Number(e.target.value));
+              previewAppearance({ fontSize: Number(e.target.value) });
+            }}
             className="w-full accent-primary"
             aria-label="Terminal font size"
           />
