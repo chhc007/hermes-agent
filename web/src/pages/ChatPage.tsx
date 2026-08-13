@@ -1943,6 +1943,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       )}
 
       <div className="flex min-h-0 flex-1 flex-col gap-2 lg:flex-row lg:gap-3">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
         <div
           className={cn(
             "relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-lg",
@@ -2036,6 +2037,15 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
           </Button>
         </div>
 
+        <TerminalInputBar
+          ref={inputBarRef}
+          onSend={handleComposerSend}
+          running={composerRunning}
+          onStop={handleComposerStop}
+          disabled={ptyState !== "open"}
+        />
+        </div>
+
         {!narrow && (
           <div
             id="chat-side-panel"
@@ -2063,14 +2073,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             </div>
           </div>
         )}
-
-        <TerminalInputBar
-          ref={inputBarRef}
-          onSend={handleComposerSend}
-          running={composerRunning}
-          onStop={handleComposerStop}
-          disabled={ptyState !== "open"}
-        />
       </div>
       <PluginSlot name="chat:bottom" />
     </div>
