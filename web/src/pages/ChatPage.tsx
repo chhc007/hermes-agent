@@ -25,7 +25,7 @@ import "@xterm/xterm/css/xterm.css";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Typography } from "@nous-research/ui/ui/components/typography/index";
 import { cn } from "@/lib/utils";
-import { Copy, CopyX, PanelRight, RotateCcw, Settings, X } from "lucide-react";
+import { Copy, PanelRight, RotateCcw, Settings, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router";
@@ -507,33 +507,22 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     [terminalBg, terminalFg],
   );
 
-  // Mobile long-press copy menu actions.
-  const copyTerminalSelection = useCallback(
-    async (scope: "all" | "viewport") => {
-      const term = termRef.current;
-      if (!term) return;
-      if (scope === "all") {
-        term.selectAll();
-      } else {
-        const buf = term.buffer.active;
-        const start = buf.viewportY;
-        const end = Math.min(buf.baseY + buf.length - 1, start + term.rows - 1);
-        if (end >= start) term.selectLines(start, end);
+  // Mobile long-press selection → copy the text the user just selected.
+  const copyTerminalSelection = useCallback(async () => {
+    const term = termRef.current;
+    if (!term) return;
+    const text = term.getSelection();
+    if (text) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // clipboard may require a user gesture — menu tap is one, so this
+        // usually succeeds; non-fatal otherwise.
       }
-      const text = term.getSelection();
-      if (text) {
-        try {
-          await navigator.clipboard.writeText(text);
-        } catch {
-          // clipboard may require a user gesture — menu tap is one, so this
-          // usually succeeds; non-fatal otherwise.
-        }
-      }
-      term.clearSelection();
-      setTouchMenuBoth(null);
-    },
-    [setTouchMenuBoth],
-  );
+    }
+    term.clearSelection();
+    setTouchMenuBoth(null);
+  }, [setTouchMenuBoth]);
 
   const handleCopyLast = () => {
     const ws = wsRef.current;
@@ -871,16 +860,18 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       };
     }
 
-    // ── Mobile touch: scroll + long-press copy ────────────────────────
+    // ── Mobile touch: scroll + long-press selection ───────────────────
     // xterm.js registers document-level touch listeners for its selection
     // gesture and preventDefaults moves once it dispatches a gesture, which
     // both blocks native scrolling AND (after our scroll handler stopped
     // propagation) left xterm's gesture state half-initialised — long-press
     // selection then rendered a black terminal. We now intercept touches at
     // CAPTURE phase on the host, so xterm never sees them: we own the whole
-    // touch surface. Single-finger drag scrolls the buffer via scrollLines();
-    // a stationary press (>=600ms, <10px movement) opens a copy menu; a pure
-    // tap is left to xterm for focus + typing.
+    // touch surface.
+    //   - quick drag         → scrollLines() (scroll the transcript)
+    //   - long press (600ms) → enter SELECTION mode: the row under the
+    //     finger is selected; dragging extends the selection line-by-line;
+    //     release shows a copy button for the selected text.
     let touchScrollCleanup: (() => void) | null = null;
     if (typeof window !== "undefined" && "ontouchstart" in window) {
       let touchStartX = 0;
@@ -889,7 +880,22 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       let touchActive = false;
       let touchMoved = false;
       let longPressTimer: ReturnType<typeof setTimeout> | null = null;
-      let longPressFired = false;
+      let selecting = false;
+      let selectAnchorRow = 0;
+
+      // Map a client Y to a buffer row (accounting for scrollback offset).
+      const clientYToBufferRow = (clientY: number): number => {
+        const rect = host.getBoundingClientRect();
+        const cellH =
+          (term as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { height?: number } } } } } })
+            ._core?._renderService?.dimensions?.css?.cell?.height ??
+          host.clientHeight / Math.max(1, term.rows);
+        const viewportRow = Math.max(
+          0,
+          Math.min(term.rows - 1, Math.floor((clientY - rect.top) / cellH)),
+        );
+        return term.buffer.active.viewportY + viewportRow;
+      };
 
       const clearLongPress = () => {
         if (longPressTimer) {
@@ -908,14 +914,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         touchLastY = t.clientY;
         touchActive = true;
         touchMoved = false;
-        longPressFired = false;
+        selecting = false;
         clearLongPress();
-        // Long-press opens the copy menu. Coordinates are viewport-relative
-        // so the menu can be positioned via position:fixed.
         longPressTimer = setTimeout(() => {
           if (!touchActive) return;
-          longPressFired = true;
-          setTouchMenuBoth({ x: t.clientX, y: t.clientY });
+          // Enter selection mode: select the row under the finger.
+          selecting = true;
+          selectAnchorRow = clientYToBufferRow(t.clientY);
+          term.selectLines(selectAnchorRow, selectAnchorRow);
         }, 600);
         // Do NOT preventDefault here: that would suppress the synthetic click
         // that focuses xterm's hidden textarea, killing tap-to-type. We only
@@ -931,15 +937,23 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         const delta = touchLastY - y;
         touchLastY = y;
 
-        // Any meaningful movement cancels the long-press.
-        if (
-          Math.abs(x - touchStartX) > 10 ||
-          Math.abs(y - touchStartY) > 10
-        ) {
-          clearLongPress();
+        // Any meaningful movement cancels the long-press (unless we're
+        // already selecting — then movement extends the selection).
+        if (!selecting) {
+          if (
+            Math.abs(x - touchStartX) > 10 ||
+            Math.abs(y - touchStartY) > 10
+          ) {
+            clearLongPress();
+          }
         }
-        if (longPressFired) {
-          // Menu is open — don't scroll underneath it.
+
+        if (selecting) {
+          // Extend the selection to the row currently under the finger.
+          const curRow = clientYToBufferRow(y);
+          const lo = Math.min(selectAnchorRow, curRow);
+          const hi = Math.max(selectAnchorRow, curRow);
+          term.selectLines(lo, hi);
           ev.preventDefault();
           ev.stopPropagation();
           return;
@@ -957,29 +971,37 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         ev.stopPropagation();
       };
 
-      const onTouchEnd = () => {
+      const onTouchEnd = (ev: TouchEvent) => {
         touchActive = false;
         clearLongPress();
-        // Keep `touchMoved`/`longPressFired` set: the browser fires a click
-        // AFTER touchend, and onClickSuppress reads them to swallow that
-        // synthetic click. Cleared there (or by the next touchstart).
+        if (selecting && term.hasSelection()) {
+          // Release over a selection → offer copy for exactly what the user
+          // selected. Position the button at the finger's release point.
+          const t = ev.changedTouches.item(0);
+          setTouchMenuBoth({
+            x: t ? t.clientX : touchStartX,
+            y: t ? t.clientY : touchStartY,
+          });
+        }
+        selecting = false;
+        // Keep `touchMoved` set: the browser fires a click AFTER touchend,
+        // and onClickSuppress reads it to swallow that synthetic click.
+        // Cleared there (or by the next touchstart).
       };
 
-      // After a drag-scroll or long-press, a click fires on release; swallow
+      // After a drag-scroll or selection, a click fires on release; swallow
       // it so the gesture doesn't also focus the terminal / move the cursor.
       const onClickSuppress = (ev: MouseEvent) => {
-        if (touchMoved || longPressFired) {
+        if (touchMoved || selecting || touchMenuRef.current) {
           ev.preventDefault();
           ev.stopPropagation();
           touchMoved = false;
-          longPressFired = false;
         }
       };
 
       // Android fires a native context menu ~500ms into a long-press, which
-      // would fight our copy menu (and on xterm triggers its black-selection
-      // path). Suppress it on the host; the terminal has no right-click
-      // context menu worth keeping on touch anyway.
+      // would fight our selection. Suppress it on the host; the terminal has
+      // no right-click context menu worth keeping on touch anyway.
       const onContextMenu = (ev: MouseEvent) => {
         ev.preventDefault();
         ev.stopPropagation();
@@ -1795,29 +1817,21 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         >
           <div
             className={cn(
-              "fixed z-[101] flex min-w-44 flex-col overflow-hidden rounded-lg border border-border/60 bg-background-base shadow-2xl",
+              "fixed z-[101] flex min-w-40 flex-col overflow-hidden rounded-lg border border-border/60 bg-background-base shadow-2xl",
             )}
             style={{
-              left: Math.min(touchMenu.x, window.innerWidth - 200),
-              top: Math.min(touchMenu.y, window.innerHeight - 140),
+              left: Math.min(touchMenu.x, window.innerWidth - 180),
+              top: Math.min(touchMenu.y, window.innerHeight - 120),
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <button
               type="button"
-              onClick={() => copyTerminalSelection("viewport")}
+              onClick={() => copyTerminalSelection()}
               className="flex items-center gap-2 px-3 py-2.5 text-left text-sm text-text-primary hover:bg-secondary/40"
             >
               <Copy className="h-4 w-4 shrink-0 text-text-secondary" />
-              复制当前屏幕
-            </button>
-            <button
-              type="button"
-              onClick={() => copyTerminalSelection("all")}
-              className="flex items-center gap-2 px-3 py-2.5 text-left text-sm text-text-primary hover:bg-secondary/40"
-            >
-              <CopyX className="h-4 w-4 shrink-0 text-text-secondary" />
-              复制全部内容
+              复制选中内容
             </button>
           </div>
         </div>
