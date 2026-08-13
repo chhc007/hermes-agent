@@ -33,6 +33,10 @@ import { useSearchParams } from "react-router";
 import { ChatSidebar } from "@/components/ChatSidebar";
 import { ChatSessionList } from "@/components/ChatSessionList";
 import {
+  TerminalInputBar,
+  type TerminalInputBarHandle,
+} from "@/components/TerminalInputBar";
+import {
   loadTerminalAppearance,
   TerminalSettingsModal,
   type TerminalAppearance,
@@ -40,6 +44,7 @@ import {
 import { usePageHeader } from "@/contexts/usePageHeader";
 import { useI18n } from "@/i18n";
 import { api } from "@/lib/api";
+import { uploadChatFiles, formatRefValue } from "@/lib/chatFileUpload";
 import { latchChatActivation } from "@/lib/chat-activation";
 import { normalizeSessionTitle } from "@/lib/chat-title";
 import { PtyResumeSanitizer } from "@/lib/pty-resume-sanitizer";
@@ -305,6 +310,34 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     touchMenuRef.current = pos;
     setTouchMenu(pos);
   }, []);
+  // Composer "running" state: true after a send until the terminal goes
+  // quiet (~2.5s without output), or until the user hits Stop.
+  const [composerRunning, setComposerRunning] = useState(false);
+  const composerRunningRef = useRef(false);
+  const quietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markComposerRunning = useCallback((running: boolean) => {
+    composerRunningRef.current = running;
+    setComposerRunning(running);
+    if (running) {
+      if (quietTimerRef.current) clearTimeout(quietTimerRef.current);
+      quietTimerRef.current = setTimeout(() => {
+        composerRunningRef.current = false;
+        setComposerRunning(false);
+      }, 2500);
+    } else if (quietTimerRef.current) {
+      clearTimeout(quietTimerRef.current);
+      quietTimerRef.current = null;
+    }
+  }, []);
+  // Any terminal output resets the quiet timer → the turn is still active.
+  const noteTerminalOutput = useCallback(() => {
+    if (!composerRunningRef.current) return;
+    if (quietTimerRef.current) clearTimeout(quietTimerRef.current);
+    quietTimerRef.current = setTimeout(() => {
+      composerRunningRef.current = false;
+      setComposerRunning(false);
+    }, 2500);
+  }, []);
   const [sessionTitleState, setSessionTitleState] = useState<{
     scope: string;
     title: string | null;
@@ -318,6 +351,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
   const [portalRoot] = useState<HTMLElement | null>(() =>
     typeof document !== "undefined" ? document.body : null,
   );
+  const inputBarRef = useRef<TerminalInputBarHandle | null>(null);
   const [narrow, setNarrow] = useState(() =>
     typeof window !== "undefined"
       ? window.matchMedia("(max-width: 1023px)").matches
@@ -523,6 +557,50 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     term.clearSelection();
     setTouchMenuBoth(null);
   }, [setTouchMenuBoth]);
+
+  // Bottom composer: send text (+ uploaded @file refs) into the PTY as if
+  // typed — burst text, wait for Ink's tokenizer, then Return. Files are
+  // uploaded first and embedded as `@file:<path>` references so the TUI's
+  // reference expansion surfaces them to the agent.
+  const handleComposerSend = useCallback(
+    async (text: string, files: File[]) => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+
+      let refs = "";
+      if (files.length > 0) {
+        try {
+          const uploaded = await uploadChatFiles(files);
+          refs = uploaded.map((u) => formatRefValue(u.path)).join(" ");
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setBanner(`附件上传失败：${message}`);
+          return false;
+        }
+      }
+
+      const payload = [text, refs].filter(Boolean).join(" ");
+      if (!payload) return true;
+      ws.send(payload);
+      setTimeout(() => {
+        const s = wsRef.current;
+        if (s && s.readyState === WebSocket.OPEN) s.send("\r");
+      }, 100);
+      markComposerRunning(true);
+      termRef.current?.focus();
+      return true;
+    },
+    [markComposerRunning],
+  );
+
+  // Stop: send Ctrl+C into the PTY (the terminal's natural interrupt). Also
+  // re-focus the terminal so keyboard input keeps flowing to the agent.
+  const handleComposerStop = useCallback(() => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send("\x03");
+    markComposerRunning(false);
+    termRef.current?.focus();
+  }, [markComposerRunning]);
 
   const handleCopyLast = () => {
     const ws = wsRef.current;
@@ -1379,6 +1457,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       // would hide the wait notice while the terminal is still blank.
       const rendered = resumeParam ? sanitizer.next(text) : text;
       term.write(rendered);
+      noteTerminalOutput();
       noteResumePtyChunk(rendered);
     };
 
@@ -1591,6 +1670,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     hasActivated,
     channel,
     clearReconnectTimer,
+    noteTerminalOutput,
     resumeParam,
     scopedProfile,
     reconnectNonce,
@@ -1983,6 +2063,14 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             </div>
           </div>
         )}
+
+        <TerminalInputBar
+          ref={inputBarRef}
+          onSend={handleComposerSend}
+          running={composerRunning}
+          onStop={handleComposerStop}
+          disabled={ptyState !== "open"}
+        />
       </div>
       <PluginSlot name="chat:bottom" />
     </div>
