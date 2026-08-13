@@ -882,6 +882,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       let longPressTimer: ReturnType<typeof setTimeout> | null = null;
       let selecting = false;
       let selectAnchorRow = 0;
+      // True for the touch that dismissed an open copy menu. That tap must
+      // NOT focus the terminal (its click is swallowed by onClickSuppress).
+      let dismissedMenu = false;
 
       // Map a client Y to a buffer row (accounting for scrollback offset).
       const clientYToBufferRow = (clientY: number): number => {
@@ -908,6 +911,17 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         // Only single-finger interaction on the host itself (not bubbles
         // from child elements like buttons).
         if (ev.touches.length !== 1) return;
+
+        // If the copy menu is open, this new touch dismisses it AND clears
+        // the selection — a "cancel" tap, not a focus/typing tap. Its
+        // synthetic click is swallowed below so the terminal doesn't steal
+        // focus / move the cursor.
+        if (touchMenuRef.current) {
+          dismissedMenu = true;
+          term.clearSelection();
+          setTouchMenuBoth(null);
+        }
+
         const t = ev.touches[0];
         touchStartX = t.clientX;
         touchStartY = t.clientY;
@@ -989,13 +1003,15 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         // Cleared there (or by the next touchstart).
       };
 
-      // After a drag-scroll or selection, a click fires on release; swallow
-      // it so the gesture doesn't also focus the terminal / move the cursor.
+      // After a drag-scroll, a selection release, or a menu-dismissing tap, a
+      // click fires; swallow it so the gesture doesn't focus the terminal /
+      // move the cursor.
       const onClickSuppress = (ev: MouseEvent) => {
-        if (touchMoved || selecting || touchMenuRef.current) {
+        if (touchMoved || selecting || dismissedMenu || touchMenuRef.current) {
           ev.preventDefault();
           ev.stopPropagation();
           touchMoved = false;
+          dismissedMenu = false;
         }
       };
 
@@ -1813,7 +1829,10 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       {touchMenu && (
         <div
           className="fixed inset-0 z-[100]"
-          onClick={() => setTouchMenuBoth(null)}
+          onClick={() => {
+            termRef.current?.clearSelection();
+            setTouchMenuBoth(null);
+          }}
         >
           <div
             className={cn(
