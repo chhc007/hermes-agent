@@ -499,6 +499,58 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     [titleScope],
   );
 
+  // Live context-window usage for the bar above the composer. Read from the
+  // chat's /api/events feed (session.info.usage), the same broadcast the
+  // sidebar consumes — we just render a compact line under the terminal.
+  interface UsageInfo {
+    context_used?: number;
+    context_max?: number;
+    context_percent?: number;
+    total?: number;
+    compressions?: number;
+  }
+  const [terminalUsage, setTerminalUsage] = useState<UsageInfo | null>(null);
+  useEffect(() => {
+    if (!isActive || !channel) return;
+    let disposed = false;
+    let ws: WebSocket | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    const connect = async () => {
+      try {
+        const url = await api.buildWsUrl("/api/events", { channel });
+        if (disposed) return;
+        ws = new WebSocket(url);
+      } catch {
+        if (!disposed) retry = setTimeout(connect, 3000);
+        return;
+      }
+      ws.onmessage = (ev) => {
+        try {
+          const frame = JSON.parse(ev.data as string) as {
+            method?: string;
+            params?: { type?: string; payload?: { usage?: UsageInfo } };
+          };
+          if (frame.method === "event" && frame.params?.type === "session.info") {
+            const usage = frame.params.payload?.usage;
+            if (usage) setTerminalUsage(usage);
+          }
+        } catch {
+          /* ignore malformed frames */
+        }
+      };
+      ws.onclose = () => {
+        if (!disposed) retry = setTimeout(connect, 3000);
+      };
+      ws.onerror = () => ws?.close();
+    };
+    void connect();
+    return () => {
+      disposed = true;
+      if (retry) clearTimeout(retry);
+      ws?.close();
+    };
+  }, [isActive, channel]);
+
   useEffect(() => {
     if (!isActive) {
       setTitle(null);
@@ -2160,6 +2212,72 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
             </span>
           </Button>
         </div>
+
+        {terminalUsage && (
+          <div className="flex items-center gap-2 px-1 sm:px-0.5">
+            {(() => {
+              const u = terminalUsage;
+              const hasGauge = Boolean(u.context_max && u.context_used != null);
+              const fmtK = (n: number): string => {
+                if (!Number.isFinite(n) || n <= 0) return "0";
+                const abs = Math.abs(n);
+                if (abs >= 1_000_000)
+                  return `${(n / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}m`;
+                if (abs >= 1_000)
+                  return `${(n / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}k`;
+                return String(Math.round(n));
+              };
+              const label = hasGauge
+                ? `${fmtK(u.context_used ?? 0)}/${fmtK(u.context_max ?? 0)} tok`
+                : (u.total ?? 0) > 0
+                  ? `${fmtK(u.total ?? 0)} tok`
+                  : null;
+              const pct =
+                hasGauge && u.context_percent != null
+                  ? Math.max(0, Math.min(100, u.context_percent))
+                  : 0;
+              if (!label) return null;
+              return (
+                <>
+                  {hasGauge && (
+                    <div
+                      className="relative h-1 w-12 shrink-0 overflow-hidden rounded-full bg-secondary/40 sm:w-20"
+                      role="progressbar"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={Math.round(pct)}
+                      aria-label={label}
+                      title="Context window usage"
+                    >
+                      <div
+                        className={cn(
+                          "absolute inset-y-0 left-0 rounded-full transition-[width] duration-500",
+                          pct >= 90
+                            ? "bg-destructive"
+                            : pct >= 70
+                              ? "bg-warning"
+                              : "bg-primary/70",
+                        )}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  )}
+                  <span className="min-w-0 truncate font-mono text-[11px] tabular-nums text-text-tertiary">
+                    {label}
+                  </span>
+                  {(u.compressions ?? 0) > 0 && (
+                    <span
+                      className="inline-flex shrink-0 items-center rounded border border-border/60 bg-secondary/30 px-1 py-0.5 text-[10px] leading-none text-text-tertiary"
+                      title="Context compressions"
+                    >
+                      🗜️×{u.compressions}
+                    </span>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
 
         <TerminalInputBar
           ref={inputBarRef}
