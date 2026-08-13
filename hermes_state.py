@@ -7675,6 +7675,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     GROUP BY root_id
                 )
                 SELECT {_sel}{prompt_select},
+                    json_extract(COALESCE(s.model_config, '{{}}'), '$._delegate_from') IS NOT NULL AS _is_delegate,
                     COALESCE(
                         (SELECT {_PREVIEW_RAW_SELECT}
                          FROM messages m
@@ -7698,6 +7699,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             _sel = self._compact_session_cols() if compact_rows else "s.*"
             query = f"""
                 SELECT {_sel}{prompt_select},
+                    json_extract(COALESCE(s.model_config, '{{}}'), '$._delegate_from') IS NOT NULL AS _is_delegate,
                     COALESCE(
                         (SELECT {_PREVIEW_RAW_SELECT}
                          FROM messages m
@@ -7720,6 +7722,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         for row in rows:
             s = self._session_row_dict(row)
             s["preview"] = _shape_preview(s.pop("_preview_raw", ""))
+            s["is_delegate"] = bool(s.pop("_is_delegate", None))
             # Drop the internal ordering column so callers see a clean dict.
             s.pop("_effective_last_active", None)
             sessions.append(s)
@@ -7737,6 +7740,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             _sel = self._compact_session_cols() if compact_rows else "s.*"
             pinned_query = f"""
                 SELECT {_sel}{prompt_select},
+                    json_extract(COALESCE(s.model_config, '{{}}'), '$._delegate_from') IS NOT NULL AS _is_delegate,
                     COALESCE(
                         (SELECT {_PREVIEW_RAW_SELECT}
                          FROM messages m
@@ -7761,6 +7765,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 if s["id"] in seen_ids:
                     continue
                 s["preview"] = _shape_preview(s.pop("_preview_raw", ""))
+                s["is_delegate"] = bool(s.pop("_is_delegate", None))
                 seen_ids.add(s["id"])
                 sessions.append(s)
 

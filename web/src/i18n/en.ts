@@ -180,6 +180,11 @@ export const en: Translations = {
     failedToDeleteSelected: "Failed to delete selected sessions",
     resumeInChat: "Resume in Chat",
     newChat: "New chat",
+    activeBadge: "current",
+    delegateBadge: "subagent",
+    delegateBadgeTitle: "Subagent session",
+    sortRecent: "Recent",
+    sortCreated: "Created",
     previousPage: "Previous page",
     nextPage: "Next page",
     roles: {

@@ -195,6 +195,13 @@ export interface Translations {
     failedToDeleteSelected: string;
     resumeInChat: string;
     newChat: string;
+    /** Badge shown on the currently-active session row in the chat sidebar. */
+    activeBadge?: string;
+    /** Badge shown on delegated subagent sessions. */
+    delegateBadge?: string;
+    delegateBadgeTitle?: string;
+    sortRecent?: string;
+    sortCreated?: string;
     previousPage: string;
     nextPage: string;
     roles: {

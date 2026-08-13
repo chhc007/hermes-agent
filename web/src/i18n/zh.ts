@@ -163,6 +163,11 @@ export const zh: Translations = {
     failedToDeleteSelected: "删除所选会话失败",
     resumeInChat: "在对话中继续",
     newChat: "新对话",
+    activeBadge: "当前",
+    delegateBadge: "子代理",
+    delegateBadgeTitle: "子代理会话",
+    sortRecent: "最近活跃",
+    sortCreated: "创建时间",
     previousPage: "上一页",
     nextPage: "下一页",
     roles: {

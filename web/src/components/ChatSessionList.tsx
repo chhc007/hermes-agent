@@ -9,13 +9,12 @@
  * and respawns it resuming that conversation (see ChatPage.tsx). The
  * "New session" action clears the resume param, which spawns a fresh PTY.
  *
+ * Each row shows a small source badge (cli / tui / telegram / discord / …)
+ * so it's obvious where the conversation came from, and a row of filter
+ * chips sits above the list to quickly narrow by source.
+ *
  * Best-effort, like ChatSidebar: a failed fetch surfaces a small inline
  * error with a retry affordance and the terminal pane keeps working.
- *
- * This is a navigation surface, NOT a session-management one — delete,
- * rename, export, and bulk actions live on the Sessions page. Keeping this
- * panel read-only (plus select / new) avoids duplicating that machinery and
- * keeps the chat context focused on switching conversations quickly.
  */
 
 import { Button } from "@nous-research/ui/ui/components/button";
@@ -30,6 +29,7 @@ import { api, type SessionInfo } from "@/lib/api";
 import { cn, timeAgo } from "@/lib/utils";
 
 const SESSION_LIMIT = 30;
+
 interface ChatSessionListProps {
   /** Active resume target (the session currently shown in the terminal). */
   activeSessionId: string | null;
@@ -45,6 +45,30 @@ interface ChatSessionListProps {
    * omitted, we fall back to clearing the resume param ourselves.
    */
   onNewChat?: () => void;
+}
+
+/** Source badge color/tone per known source. Unknown sources fall back to a
+ *  neutral outline tone. */
+const SOURCE_TONES: Record<string, string> = {
+  cli: "border-midground/30 bg-midground/10 text-midground",
+  tui: "border-primary/40 bg-primary/15 text-primary",
+  telegram: "border-sky-500/40 bg-sky-500/15 text-sky-400",
+  discord: "border-indigo-500/40 bg-indigo-500/15 text-indigo-400",
+  slack: "border-emerald-500/40 bg-emerald-500/15 text-emerald-400",
+  cron: "border-amber-500/40 bg-amber-500/15 text-amber-400",
+  web: "border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-400",
+  dashboard: "border-fuchsia-500/40 bg-fuchsia-500/15 text-fuchsia-400",
+};
+
+function sourceTone(source: string | null): string {
+  if (!source) return "border-border/60 bg-secondary/30 text-text-secondary";
+  return SOURCE_TONES[source.toLowerCase()] ?? "border-border/60 bg-secondary/30 text-text-secondary";
+}
+
+/** Normalise a session source to a short label for the badge. */
+function sourceLabel(source: string | null): string {
+  if (!source) return "—";
+  return source.toLowerCase();
 }
 
 function rowLabel(session: SessionInfo, untitled: string): string {
@@ -63,12 +87,17 @@ export function ChatSessionList({
   onNewChat,
 }: ChatSessionListProps) {
   const { t } = useI18n();
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const resumeId = searchParams.get("resume");
   const [sessions, setSessions] = useState<SessionInfo[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Bumped to force a refetch (after switching, on Refresh, on mount).
   const [reloadNonce, setReloadNonce] = useState(0);
+  // Active source filter (null = all).
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
+  // List ordering: "recent" = last active first (default), "created" = newest first.
+  const [order, setOrder] = useState<"created" | "recent">("recent");
 
   // `profile` is read inside the fetch; it's part of the scope key so a
   // profile switch refetches. The empty-string fallback keeps the dep
@@ -80,24 +109,34 @@ export function ChatSessionList({
   // stale list out of order.
   const reqRef = useRef(0);
 
-  const load = useCallback(() => {
-    const myReq = ++reqRef.current;
-    setLoading(true);
-    setError(null);
-    api
-      .getSessions(SESSION_LIMIT, 0, scopeKey, "recent")
-      .then((res) => {
-        if (reqRef.current !== myReq) return;
-        setSessions(res.sessions);
-      })
-      .catch((e: Error) => {
-        if (reqRef.current !== myReq) return;
-        setError(e.message || "failed to load sessions");
-      })
-      .finally(() => {
-        if (reqRef.current === myReq) setLoading(false);
-      });
-  }, [scopeKey]);
+  const load = useCallback(
+    (opts?: { silent?: boolean }) => {
+      const myReq = ++reqRef.current;
+      // Silent mode (polling / visibility resume) only swaps the data in —
+      // no loading/error churn so the list never flickers.
+      if (!opts?.silent) {
+        setLoading(true);
+        setError(null);
+      }
+      api
+        .getSessions(SESSION_LIMIT, 0, scopeKey, order, true)
+        .then((res) => {
+          if (reqRef.current !== myReq) return;
+          setSessions(res.sessions);
+        })
+        .catch((e: Error) => {
+          if (reqRef.current !== myReq) return;
+          if (!opts?.silent) setError(e.message || "failed to load sessions");
+        })
+        .finally(() => {
+          // Symmetric with the silent guard above: a silent refresh never
+          // clears a loading state it didn't set (and can't clobber one a
+          // concurrent visible load is showing).
+          if (reqRef.current === myReq && !opts?.silent) setLoading(false);
+        });
+    },
+    [order, scopeKey],
+  );
 
   useEffect(() => {
     // Dashboard data surfaces fetch from an effect on mount + scope change;
@@ -108,7 +147,58 @@ export function ChatSessionList({
     // `reloadNonce` is a manual refetch trigger (Refresh button / row pick).
   }, [load, reloadNonce]);
 
+  // Refresh immediately when the `?resume` target changes (a session was
+  // picked here, or a new one was started elsewhere). Skipped on first
+  // mount — the mount effect above already loaded.
+  const prevResumeRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (prevResumeRef.current === undefined) {
+      prevResumeRef.current = resumeId; // first run: mount effect handles it
+      return;
+    }
+    if (prevResumeRef.current !== resumeId) {
+      prevResumeRef.current = resumeId;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      load();
+    }
+  }, [resumeId, load]);
+
+  // Silent polling: new conversations (New chat, Telegram, …) show up
+  // without a manual refresh, with no loading/error flicker.
+  useEffect(() => {
+    const id = setInterval(() => load({ silent: true }), 30000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  // Refetch quietly when the tab becomes visible again — the list may have
+  // drifted while the user was elsewhere.
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") load({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [load]);
+
   const reload = useCallback(() => setReloadNonce((n) => n + 1), []);
+
+  // Sources present in the loaded list, for the filter chips. Kept stable
+  // (sorted) so the chip row doesn't jump around while data loads.
+  const availableSources = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of sessions ?? []) {
+      if (s.source) set.add(s.source.toLowerCase());
+    }
+    return Array.from(set).sort();
+  }, [sessions]);
+
+  const visibleSessions = useMemo(() => {
+    if (!sessions) return sessions;
+    if (!sourceFilter) return sessions;
+    return sessions.filter(
+      (s) => s.source?.toLowerCase() === sourceFilter.toLowerCase(),
+    );
+  }, [sessions, sourceFilter]);
 
   // Picking a row sets `/chat?resume=<id>`. Re-picking the row already in
   // the terminal is a no-op (avoids a needless PTY teardown).
@@ -170,16 +260,16 @@ export function ChatSessionList({
         </div>
       );
     }
-    if (!sessions || sessions.length === 0) {
+    if (!visibleSessions || visibleSessions.length === 0) {
       return (
         <div className="px-2 py-6 text-center text-xs text-text-secondary">
-          {t.sessions.noSessions}
+          {sourceFilter ? "该来源暂无会话" : t.sessions.noSessions}
         </div>
       );
     }
     return (
       <div className="flex flex-col gap-0.5">
-        {sessions.map((s) => {
+        {visibleSessions.map((s) => {
           const isActive = s.id === activeSessionId;
           return (
             <ListItem
@@ -190,12 +280,41 @@ export function ChatSessionList({
                 "flex-col items-start gap-0.5 rounded px-2 py-1.5",
                 "normal-case tracking-normal",
                 isActive
-                  ? "bg-primary/10 text-foreground border-l-2 border-primary"
+                  ? "bg-primary/15 text-foreground border-l-[3px] border-primary"
                   : "text-text-secondary hover:bg-midground/5 hover:text-foreground",
               )}
             >
-              <span className="w-full truncate text-sm font-medium">
-                {rowLabel(s, t.sessions.untitledSession)}
+              <span className="flex w-full items-center gap-1.5">
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-sm font-medium",
+                    isActive && "text-primary",
+                  )}
+                >
+                  {rowLabel(s, t.sessions.untitledSession)}
+                </span>
+                {isActive && (
+                  <span className="inline-flex shrink-0 items-center border border-primary/50 bg-primary/10 px-1 py-px text-[0.625rem] leading-none tracking-wide text-primary">
+                    {t.sessions.activeBadge}
+                  </span>
+                )}
+                {s.is_delegate && (
+                  <span
+                    className="inline-flex shrink-0 items-center border border-purple-500/50 bg-purple-500/10 px-1 py-px text-[0.625rem] leading-none tracking-wide text-purple-400"
+                    title={t.sessions.delegateBadgeTitle}
+                  >
+                    {t.sessions.delegateBadge}
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    "inline-flex shrink-0 items-center border px-1 py-px text-[0.625rem] leading-none tracking-wide",
+                    sourceTone(s.source),
+                  )}
+                  title={s.source ?? "source"}
+                >
+                  {sourceLabel(s.source)}
+                </span>
               </span>
               <span className="flex w-full items-center gap-1.5 text-[0.6875rem] text-text-tertiary">
                 <span>{timeAgo(s.last_active)}</span>
@@ -205,19 +324,13 @@ export function ChatSessionList({
                     <span>{s.message_count} msgs</span>
                   </>
                 )}
-                {s.source && s.source !== "cli" && (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span className="truncate">{s.source}</span>
-                  </>
-                )}
               </span>
             </ListItem>
           );
         })}
       </div>
     );
-  }, [activeSessionId, error, loading, pick, reload, sessions, t]);
+  }, [activeSessionId, error, loading, pick, reload, sessions, sourceFilter, t, visibleSessions]);
 
   return (
     <aside
@@ -251,6 +364,66 @@ export function ChatSessionList({
       >
         {t.sessions.newChat}
       </Button>
+
+      {/* Source filter chips */}
+      {availableSources.length > 1 && (
+        <div className="mb-2 flex flex-wrap gap-1 px-2">
+          <button
+            type="button"
+            onClick={() => setSourceFilter(null)}
+            className={cn(
+              "rounded-full border px-2 py-0.5 text-[0.625rem] tracking-wide transition-colors",
+              sourceFilter === null
+                ? "border-primary/60 bg-primary/15 text-primary"
+                : "border-border/60 bg-secondary/30 text-text-secondary hover:text-foreground",
+            )}
+          >
+            All
+          </button>
+          {availableSources.map((src) => (
+            <button
+              key={src}
+              type="button"
+              onClick={() =>
+                setSourceFilter((cur) => (cur === src ? null : src))
+              }
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[0.625rem] tracking-wide transition-colors",
+                sourceFilter === src
+                  ? "border-primary/60 bg-primary/15 text-primary"
+                  : "border-border/60 bg-secondary/30 text-text-secondary hover:text-foreground",
+              )}
+            >
+              {src}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Ordering: recent activity vs creation time */}
+      <div className="mb-2 flex items-center gap-1 px-2">
+        {(
+          [
+            ["recent", t.sessions.sortRecent],
+            ["created", t.sessions.sortCreated],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setOrder(value)}
+            aria-pressed={order === value}
+            className={cn(
+              "flex-1 rounded border px-1 py-0.5 text-[0.625rem] tracking-wide transition-colors",
+              order === value
+                ? "border-primary/60 bg-primary/15 text-primary"
+                : "border-border/60 bg-secondary/30 text-text-secondary hover:text-foreground",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1 pb-1">
         {content}

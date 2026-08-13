@@ -65,6 +65,7 @@ def get_sessions(
     exclude_sources: str = None,
     cwd_prefix: str = None,
     full: bool = False,
+    include_children: bool = False,
     profile: Optional[str] = None,
 ):
     """List sessions.
@@ -123,6 +124,7 @@ def get_sessions(
                 include_archived=include_archived,
                 archived_only=archived_only,
                 order_by_last_active=order == "recent",
+                include_children=include_children,
                 # SQL-level projection: when the caller didn't ask for full
                 # rows, skip the system_prompt blob inside SQLite too (pairs
                 # with the API-level _strip_session_list_rows below).
@@ -137,7 +139,7 @@ def get_sessions(
                 min_message_count=min_message_count,
                 include_archived=include_archived,
                 archived_only=archived_only,
-                exclude_children=True,
+                exclude_children=not include_children,
             )
             now = time.time()
             # Same ownership contract as get_session_detail: rows are stamped
