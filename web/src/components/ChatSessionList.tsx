@@ -158,7 +158,7 @@ export function ChatSessionList({
     }
     if (prevResumeRef.current !== resumeId) {
       prevResumeRef.current = resumeId;
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       load();
     }
   }, [resumeId, load]);
