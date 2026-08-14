@@ -1112,7 +1112,9 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     // selection then rendered a black terminal. We now intercept touches at
     // CAPTURE phase on the host, so xterm never sees them: we own the whole
     // touch surface.
-    //   - quick drag         → scrollLines() (scroll the transcript)
+    //   - quick drag         → scrollLines() with 1:1 pixel tracking + fling
+    //     inertia on release (feels like a native list)
+    //   - triple tap         → scrollToBottom()
     //   - long press (600ms) → enter SELECTION mode: the row under the
     //     finger is selected; dragging extends the selection line-by-line;
     //     release shows a copy button for the selected text.
@@ -1121,6 +1123,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       let touchStartX = 0;
       let touchStartY = 0;
       let touchLastY = 0;
+      let touchLastT = 0;
       let touchActive = false;
       let touchMoved = false;
       let longPressTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1129,14 +1132,59 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       // True for the touch that dismissed an open copy menu. That tap must
       // NOT focus the terminal (its click is swallowed by onClickSuppress).
       let dismissedMenu = false;
+      // Fling-inertia bookkeeping (rAF-driven after release).
+      let scrollRaf = 0;
+      let velocity = 0;
+      let pendingPx = 0;
+      // Triple-tap detection: timestamps of the last quick taps.
+      let tapTimes: number[] = [];
+
+      // Terminal cell height in px — used for pixel-accurate scrolling.
+      const cellHeightPx = (): number =>
+        (term as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { height?: number } } } } } })
+          ._core?._renderService?.dimensions?.css?.cell?.height ??
+        host.clientHeight / Math.max(1, term.rows);
+
+      // Scroll by a pixel delta, converting to lines with sub-line carryover
+      // so a slow drag tracks the finger 1:1 (no quantised 24px steps).
+      const scrollByPx = (px: number) => {
+        pendingPx += px;
+        const cellH = cellHeightPx() || 1;
+        const lines = Math.trunc(pendingPx / cellH);
+        if (lines !== 0) {
+          term.scrollLines(lines);
+          pendingPx -= lines * cellH;
+        }
+      };
+
+      // Release fling: keep scrolling with decaying velocity.
+      const stopScrollRaf = () => {
+        if (scrollRaf) {
+          cancelAnimationFrame(scrollRaf);
+          scrollRaf = 0;
+        }
+      };
+      const startFling = (v: number) => {
+        stopScrollRaf();
+        velocity = v;
+        const step = () => {
+          if (!touchActive && Math.abs(velocity) > 0.2) {
+            // px per frame; damp like a native list (~0.93/frame @60fps).
+            scrollByPx(velocity);
+            velocity *= 0.93;
+            scrollRaf = requestAnimationFrame(step);
+          } else {
+            velocity = 0;
+            scrollRaf = 0;
+          }
+        };
+        scrollRaf = requestAnimationFrame(step);
+      };
 
       // Map a client Y to a buffer row (accounting for scrollback offset).
       const clientYToBufferRow = (clientY: number): number => {
         const rect = host.getBoundingClientRect();
-        const cellH =
-          (term as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { height?: number } } } } } })
-            ._core?._renderService?.dimensions?.css?.cell?.height ??
-          host.clientHeight / Math.max(1, term.rows);
+        const cellH = cellHeightPx();
         const viewportRow = Math.max(
           0,
           Math.min(term.rows - 1, Math.floor((clientY - rect.top) / cellH)),
@@ -1166,10 +1214,16 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
           setTouchMenuBoth(null);
         }
 
+        // Any new touch stops the fling immediately.
+        stopScrollRaf();
+        pendingPx = 0;
+        velocity = 0;
+
         const t = ev.touches[0];
         touchStartX = t.clientX;
         touchStartY = t.clientY;
         touchLastY = t.clientY;
+        touchLastT = performance.now();
         touchActive = true;
         touchMoved = false;
         selecting = false;
@@ -1192,8 +1246,12 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         if (!touchActive || ev.touches.length !== 1) return;
         const y = ev.touches[0].clientY;
         const x = ev.touches[0].clientX;
-        const delta = touchLastY - y;
+        const now = performance.now();
+        const dt = Math.max(1, now - touchLastT);
+        const dy = touchLastY - y;
+        const v = (dy / dt) * 16.67; // px per frame at 60fps
         touchLastY = y;
+        touchLastT = now;
 
         // Any meaningful movement cancels the long-press (unless we're
         // already selecting — then movement extends the selection).
@@ -1222,9 +1280,10 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
         if (!touchMoved && Math.abs(y - touchStartY) < 8) return;
         touchMoved = true;
 
-        // Scroll a line per ~24px of drag, matching the desktop wheel feel.
-        const step = Math.max(1, Math.round(Math.abs(delta) / 24));
-        term.scrollLines(delta > 0 ? step : -step);
+        // Track the finger 1:1 (pixel → line, with carryover).
+        scrollByPx(dy);
+        // Remember the release velocity (smoothed) for the fling.
+        velocity = v;
         ev.preventDefault();
         ev.stopPropagation();
       };
@@ -1232,6 +1291,28 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       const onTouchEnd = (ev: TouchEvent) => {
         touchActive = false;
         clearLongPress();
+
+        // Triple-tap → jump to bottom.
+        if (!touchMoved && !selecting) {
+          const now = performance.now();
+          tapTimes = tapTimes.filter((t) => now - t < 300);
+          tapTimes.push(now);
+          if (tapTimes.length >= 3) {
+            tapTimes = [];
+            term.scrollToBottom();
+            // Visual confirmation: brief flash is unnecessary — terminal
+            // jumps to bottom which is obvious feedback.
+            if (navigator.vibrate) navigator.vibrate(20);
+          }
+        } else {
+          tapTimes = [];
+        }
+
+        // Start fling inertia from the release velocity (touch drags only).
+        if (touchMoved && !selecting && Math.abs(velocity) > 0.5) {
+          startFling(velocity);
+        }
+
         if (selecting && term.hasSelection()) {
           // Release over a selection → offer copy for exactly what the user
           // selected. Position the button at the finger's release point.
@@ -1284,6 +1365,7 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       host.addEventListener("contextmenu", onContextMenu, { capture: true });
       touchScrollCleanup = () => {
         clearLongPress();
+        stopScrollRaf();
         host.removeEventListener("touchstart", onTouchStart, { capture: true });
         host.removeEventListener("touchmove", onTouchMove, { capture: true });
         host.removeEventListener("touchend", onTouchEnd, { capture: true });
