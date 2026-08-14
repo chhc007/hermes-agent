@@ -25,7 +25,7 @@ import "@xterm/xterm/css/xterm.css";
 import { Button } from "@nous-research/ui/ui/components/button";
 import { Typography } from "@nous-research/ui/ui/components/typography/index";
 import { cn } from "@/lib/utils";
-import { Copy, PanelRight, RotateCcw, Settings, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, PanelRight, RotateCcw, Settings, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router";
@@ -768,6 +768,16 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
     termRef.current?.focus();
   }, [markComposerRunning]);
 
+  // Floating jump buttons (right edge of the terminal): scroll to top/bottom
+  // of the scrollback. Stopping propagation keeps the tap from focusing the
+  // terminal's hidden textarea (which would steal the keyboard).
+  const jumpScroll = useCallback((to: "top" | "bottom") => {
+    const term = termRef.current;
+    if (!term) return;
+    if (to === "top") term.scrollToTop();
+    else term.scrollToBottom();
+  }, []);
+
   const handleCopyLast = () => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
@@ -1136,8 +1146,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       let scrollRaf = 0;
       let velocity = 0;
       let pendingPx = 0;
-      // Triple-tap detection: timestamps of the last quick taps.
-      let tapTimes: number[] = [];
 
       // Terminal cell height in px — used for pixel-accurate scrolling.
       const cellHeightPx = (): number =>
@@ -1291,22 +1299,6 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
       const onTouchEnd = (ev: TouchEvent) => {
         touchActive = false;
         clearLongPress();
-
-        // Triple-tap → jump to bottom.
-        if (!touchMoved && !selecting) {
-          const now = performance.now();
-          tapTimes = tapTimes.filter((t) => now - t < 300);
-          tapTimes.push(now);
-          if (tapTimes.length >= 3) {
-            tapTimes = [];
-            term.scrollToBottom();
-            // Visual confirmation: brief flash is unnecessary — terminal
-            // jumps to bottom which is obvious feedback.
-            if (navigator.vibrate) navigator.vibrate(20);
-          }
-        } else {
-          tapTimes = [];
-        }
 
         // Start fling inertia from the release velocity (touch drags only).
         if (touchMoved && !selecting && Math.abs(velocity) > 0.5) {
@@ -2272,6 +2264,38 @@ export default function ChatPage({ isActive = true }: { isActive?: boolean }) {
               </Button>
             </div>
           )}
+
+          {/* Floating jump-to-top/bottom (mobile-friendly; also works on
+              desktop). Stops propagation so a tap doesn't focus the terminal
+              textarea and steal the keyboard. */}
+          <div className="absolute right-2 top-2 z-10 flex flex-col gap-1 sm:right-3 sm:top-3 lg:right-4 lg:top-4">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                jumpScroll("top");
+              }}
+              aria-label="Jump to top"
+              title="回到最上面"
+              className="flex h-7 w-7 items-center justify-center rounded border border-current/30 bg-black/20 text-xs opacity-70 transition-opacity duration-150 hover:opacity-100 hover:border-current/60"
+              style={{ color: terminalFg }}
+            >
+              <ArrowUp className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                jumpScroll("bottom");
+              }}
+              aria-label="Jump to bottom"
+              title="回到最下面"
+              className="flex h-7 w-7 items-center justify-center rounded border border-current/30 bg-black/20 text-xs opacity-70 transition-opacity duration-150 hover:opacity-100 hover:border-current/60"
+              style={{ color: terminalFg }}
+            >
+              <ArrowDown className="h-3.5 w-3.5" />
+            </button>
+          </div>
 
           <Button
             ghost
